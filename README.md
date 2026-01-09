@@ -1,425 +1,334 @@
-# AppTwitter
+<p align="center">
+  <h1 align="center">🐦 AppTwitter</h1>
+  <p align="center">
+    <strong>AI-Powered Twitter/X Automation for Content Creators</strong>
+  </p>
+  <p align="center">
+    Automate the promotion of your LinkedIn and Substack articles while generating engaging tweets that match your unique voice and style.
+  </p>
+</p>
 
-**Aplicación local para automatizar la difusión en X (Twitter) de artículos y generar tweets de engagement**
+<p align="center">
+  <a href="https://www.gnu.org/licenses/gpl-3.0">
+    <img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPL v3">
+  </a>
+  <a href="https://www.python.org/downloads/">
+    <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+">
+  </a>
+  <a href="https://python-poetry.org/">
+    <img src="https://img.shields.io/badge/poetry-managed-blueviolet" alt="Poetry">
+  </a>
+  <img src="https://img.shields.io/badge/platform-Linux-lightgrey" alt="Platform: Linux">
+</p>
 
-## 📋 Descripción
+---
 
-AppTwitter es una aplicación local-first desarrollada en Python que permite automatizar la difusión de artículos publicados en LinkedIn y Substack, además de generar tweets originales de engagement alineados con tu forma de pensar, ideas y estilo discursivo.
+## ✨ Features
 
-### Características principales
+### 🤖 AI-Powered Tweet Generation
+- **Multiple LLM Support**: Gemini (recommended), OpenAI, or Anthropic
+- **Voice Profile**: Define your tone, themes, and argumentative patterns
+- **Smart Templates**: Fallback system when LLM is unavailable
+- **Content Types**: Promotional tweets, thought pieces, questions, and threads
 
-- ✅ **Importación de artículos** desde CSV o JSON
-- ✅ **Perfil de voz personalizable** (temas, tono, patrones argumentativos)
-- ✅ **Generación inteligente de tweets** con plantillas o LLM (Gemini/OpenAI/Anthropic)
-- ✅ **Filtros de seguridad** (duplicados, palabras prohibidas, lenguaje agresivo)
-- ✅ **Cola de publicación** con planificación automática
-- ✅ **Revisión humana** antes de publicar
-- ✅ **Publicación en X** vía API oficial
-- ✅ **Modo exportación** para publicación manual
-- ✅ **Base de datos SQLite** local
-- ✅ **CLI robusta** con Rich
+### 📥 Article Import
+- Import from **CSV** or **JSON** files
+- Support for **LinkedIn** and **Substack** articles
+- Interactive article addition mode
+- Automatic metadata extraction
 
-## 🚀 Instalación
+### 🛡️ Safety & Quality
+- **Duplicate Detection**: Semantic similarity filtering
+- **Prohibited Words**: Block unwanted content
+- **Aggressive Language Filter**: Keep your brand safe
+- **Human Review**: Required by default before publishing
 
-### Requisitos
+### 📅 Smart Scheduling
+- **Time Window**: Configure your optimal posting hours
+- **Spacing Control**: Minimum time between tweets
+- **Daily Limits**: Respect platform guidelines
+- **Daemon Mode**: Run continuously in background
 
-- Ubuntu 20.04+ (o cualquier distribución Linux)
-- Python 3.11 o superior
-- Poetry (gestor de dependencias)
+### 🔒 Privacy-First
+- **100% Local**: All data stored on your machine
+- **No Cloud Dependencies**: Works offline (except for LLM/X API)
+- **SQLite Database**: Portable and lightweight
+- **Secure Credentials**: Environment variables only
 
-### Pasos
+---
 
-1. **Clonar o descargar el proyecto**
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **Linux** (Ubuntu 20.04+ recommended)
+- **Python 3.11+**
+- **Poetry** (dependency manager)
+
+### Installation
 
 ```bash
-cd ~/Workspace/AppTwitter
-```
+# Clone the repository
+git clone https://github.com/federicoviola/AppTwitter.git
+cd AppTwitter
 
-2. **Instalar Poetry** (si no lo tenés)
-
-```bash
+# Install Poetry (if not installed)
 curl -sSL https://install.python-poetry.org | python3 -
-```
 
-3. **Instalar dependencias**
-
-```bash
+# Install dependencies
 poetry install
-```
 
-4. **Instalar dependencias opcionales** (LLM)
-
-Para Gemini (Google) - **Recomendado**:
-```bash
+# Install Gemini support (recommended)
 poetry install -E llm-gemini
+
+# Initialize the application
+./app.sh init
 ```
 
-Para OpenAI:
+### Configuration
+
+1. **Set up X (Twitter) credentials** in `.env`:
 ```bash
-poetry install -E llm-openai
+X_API_KEY=your_api_key
+X_API_SECRET=your_api_secret
+X_ACCESS_TOKEN=your_access_token
+X_ACCESS_TOKEN_SECRET=your_access_token_secret
 ```
 
-Para Anthropic:
+2. **Add your Gemini API key** (free tier available):
 ```bash
-poetry install -E llm-anthropic
+GEMINI_API_KEY=your_gemini_api_key
+```
+Get your key at: https://aistudio.google.com/app/apikey
+
+3. **Configure your voice profile**:
+```bash
+./app.sh edit-voice
 ```
 
-5. **Inicializar la aplicación**
+---
+
+## 📖 Usage
+
+### Complete Workflow
 
 ```bash
-poetry run app init
+# 1. Import your articles
+./app.sh import-articles --file articles.csv
+
+# 2. Generate tweets with custom mix
+./app.sh generate --mix "promo:10,thought:5,question:3"
+
+# 3. Review and approve
+./app.sh review
+
+# 4. Schedule approved tweets
+./app.sh schedule
+
+# 5. Run the publisher (daemon mode)
+./app.sh run --daemon --interval 300
 ```
 
-Esto creará:
-- `.env` (configuración)
-- `voz.yaml` (perfil de voz)
-- `data/tweets.db` (base de datos)
+### Command Reference
 
-## ⚙️ Configuración
+| Command | Description |
+|---------|-------------|
+| `init` | Initialize app (create config files) |
+| `import-articles` | Import articles from CSV/JSON |
+| `add-article` | Add article interactively |
+| `list-articles` | List imported articles |
+| `generate` | Generate tweet candidates |
+| `review` | Review and approve tweets |
+| `schedule` | Schedule approved tweets |
+| `list-scheduled` | Show scheduled tweets |
+| `reschedule` | Change tweet schedule |
+| `run` | Publish scheduled tweets |
+| `post-now` | Publish one tweet immediately |
+| `export` | Export tweets to file |
+| `stats` | Show statistics |
+| `edit-voice` | Edit voice profile |
+| `set-voice` | Set voice profile from file |
 
-### 1. Credenciales de X (Twitter)
+### Tweet Types
 
-Editar `.env` y agregar tus credenciales:
+- **promo**: Article promotion with link
+- **thought**: Brief thought or insight (no link)
+- **question**: Open-ended question for engagement
+- **thread**: First tweet of a thread
 
-```bash
-X_API_KEY=tu_api_key
-X_API_SECRET=tu_api_secret
-X_ACCESS_TOKEN=tu_access_token
-X_ACCESS_TOKEN_SECRET=tu_access_token_secret
+---
+
+## 🏗️ Architecture
+
+```
+AppTwitter/
+├── src/
+│   ├── cli.py          # CLI interface (Click + Rich)
+│   ├── db.py           # SQLite database management
+│   ├── ingest.py       # Article import
+│   ├── voice.py        # Voice profile handling
+│   ├── generator.py    # Tweet generation (LLM/templates)
+│   ├── filters.py      # Safety filters
+│   ├── scheduler.py    # Queue and scheduling
+│   ├── x_client.py     # X API client (Tweepy)
+│   └── utils.py        # Utilities
+├── data/
+│   └── tweets.db       # SQLite database
+├── logs/
+│   └── app.log         # Application logs
+├── .env                # Configuration (credentials)
+├── voz.yaml            # Voice profile
+└── app.sh              # Helper script
 ```
 
-**Obtener credenciales:** https://developer.twitter.com/en/portal/dashboard
+### Database Schema
 
-### 2. LLM (opcional)
+| Table | Purpose |
+|-------|---------|
+| `articulos` | Imported articles |
+| `tweet_candidates` | Generated tweets |
+| `tweet_queue` | Publication queue |
+| `tweets_publicados` | Published tweet history |
+| `settings` | App configuration |
+| `logs` | Event logs |
 
-Si querés usar generación con LLM, agregar en `.env`:
+### Queue States
 
-```bash
-# Para Gemini (Google) - Recomendado
-GEMINI_API_KEY=tu_api_key
-
-# O para OpenAI
-OPENAI_API_KEY=tu_api_key
-
-# O para Anthropic
-ANTHROPIC_API_KEY=tu_api_key
+```
+drafted → approved → scheduled → posted
+                  ↘ skipped    ↘ failed
 ```
 
-**Obtener API key de Gemini:** https://aistudio.google.com/app/apikey
+---
 
-### 3. Perfil de voz
+## 🔧 Configuration
 
-Editar `voz.yaml` con tu perfil:
-
-```bash
-poetry run app edit-voice
-```
-
-O copiar desde el ejemplo:
+### Environment Variables (`.env`)
 
 ```bash
-cp voz.example.yaml voz.yaml
-nano voz.yaml
-```
+# X (Twitter) API Credentials
+X_API_KEY=
+X_API_SECRET=
+X_ACCESS_TOKEN=
+X_ACCESS_TOKEN_SECRET=
 
-### 4. Configuración de publicación
+# LLM API Keys (choose one)
+GEMINI_API_KEY=          # Recommended (free tier)
+OPENAI_API_KEY=          # Alternative
+ANTHROPIC_API_KEY=       # Alternative
 
-En `.env`:
+# Publishing Settings
+AUTO_POST_ENABLED=false  # Enable automatic posting
+MAX_TWEETS_PER_DAY=3     # Daily tweet limit
+MIN_SPACING_MINUTES=120  # Minimum time between tweets
 
-```bash
-# Habilitar publicación automática
-AUTO_POST_ENABLED=false  # Cambiar a true cuando estés listo
-
-# Límites
-MAX_TWEETS_PER_DAY=3
-MIN_SPACING_MINUTES=120
-
-# Ventana horaria (formato HH:MM)
+# Time Window (24h format)
 POST_WINDOW_START=09:00
 POST_WINDOW_END=22:00
 ```
 
-## 📖 Uso
+### Voice Profile (`voz.yaml`)
 
-### Workflow completo
+```yaml
+perfil:
+  nombre: "Your Name"
+  bio: "Your bio for context"
 
-#### 1. Importar artículos
+temas:
+  principales:
+    - "AI"
+    - "Philosophy"
+    - "Technology"
 
-Desde CSV:
-```bash
-poetry run app import-articles --file articulos.csv
+tono:
+  formal: true
+  academico: false
+  critico: true
+
+ejemplos:
+  - "Example tweet 1"
+  - "Example tweet 2"
+  - "Example tweet 3"
+
+generacion:
+  temperatura: 0.7
+  max_tokens: 280
 ```
-
-Desde JSON:
-```bash
-poetry run app import-articles --file articulos.json
-```
-
-Modo interactivo:
-```bash
-poetry run app add-article
-```
-
-#### 2. Listar artículos
-
-```bash
-poetry run app list-articles --limit 20
-```
-
-#### 3. Generar tweets
-
-Generar con mix personalizado:
-```bash
-poetry run app generate --mix "promo:10,thought:6,question:4"
-```
-
-Tipos de tweets:
-- `promo`: Difusión de artículo (con link)
-- `thought`: Pensamiento breve (sin link)
-- `question`: Pregunta abierta
-- `thread`: Primer tweet de un hilo
-
-#### 4. Revisar tweets
-
-```bash
-poetry run app review
-```
-
-Opciones:
-- `a` = Aprobar
-- `s` = Omitir (skip)
-- `q` = Salir
-
-#### 5. Planificar tweets aprobados
-
-```bash
-poetry run app schedule
-```
-
-Esto asigna horarios automáticamente respetando:
-- Ventana horaria configurada
-- Espaciado mínimo entre tweets
-- Límite diario de tweets
-
-#### 6. Publicar tweets
-
-**Modo manual** (publicar uno ahora):
-```bash
-poetry run app post-now
-```
-
-**Modo automático** (publicar todos los pendientes):
-```bash
-poetry run app run
-```
-
-**Modo daemon** (loop continuo):
-```bash
-poetry run app run --daemon --interval 60
-```
-
-#### 7. Exportar tweets (sin API)
-
-Si no tenés credenciales de X:
-
-```bash
-poetry run app export --output tweets.md
-```
-
-Esto genera un archivo markdown con los tweets para copiar/pegar manualmente.
-
-### Comandos adicionales
-
-**Ver estadísticas:**
-```bash
-poetry run app stats
-```
-
-**Configurar perfil de voz:**
-```bash
-poetry run app set-voice --file mi_voz.yaml
-```
-
-**Ayuda:**
-```bash
-poetry run app --help
-poetry run app [comando] --help
-```
-
-## 📁 Estructura del proyecto
-
-```
-AppTwitter/
-├── .env                    # Configuración (credenciales, límites)
-├── .env.example            # Plantilla de configuración
-├── voz.yaml                # Perfil de voz (temas, tono, ejemplos)
-├── voz.example.yaml        # Plantilla de perfil de voz
-├── articulos.example.csv   # Ejemplo de artículos
-├── pyproject.toml          # Dependencias y configuración
-├── README.md               # Este archivo
-├── data/
-│   └── tweets.db           # Base de datos SQLite
-├── logs/
-│   └── app.log             # Logs de la aplicación
-└── src/
-    ├── cli.py              # Interfaz CLI
-    ├── db.py               # Gestión de base de datos
-    ├── ingest.py           # Importación de artículos
-    ├── voice.py            # Perfil de voz
-    ├── generator.py        # Generación de tweets
-    ├── filters.py          # Filtros de seguridad
-    ├── scheduler.py        # Planificación y cola
-    ├── x_client.py         # Cliente de API de X
-    └── utils.py            # Utilidades
-```
-
-## 🗄️ Esquema de base de datos
-
-### Tablas
-
-- **articulos**: Artículos importados
-- **tweet_candidates**: Tweets generados (candidatos)
-- **tweet_queue**: Cola de publicación
-- **tweets_publicados**: Historial de tweets publicados
-- **settings**: Configuración de la aplicación
-- **logs**: Logs de eventos
-
-### Estados de la cola
-
-- `drafted`: Borrador (generado, pendiente de revisión)
-- `approved`: Aprobado (listo para planificar)
-- `scheduled`: Planificado (con fecha/hora asignada)
-- `posted`: Publicado
-- `failed`: Fallido
-- `skipped`: Omitido
-
-## 🔒 Seguridad y privacidad
-
-- ✅ **Local-first**: Todos los datos se almacenan localmente
-- ✅ **Credenciales seguras**: Variables de entorno, nunca hardcodeadas
-- ✅ **Revisión humana**: Activada por defecto
-- ✅ **Filtros de seguridad**: Evita duplicados, lenguaje agresivo, contenido engañoso
-- ✅ **Rate limits**: Respeta límites de la API de X
-- ✅ **Modo exportación**: Alternativa sin API para mayor control
-
-## 🛡️ Términos de uso
-
-Esta aplicación:
-- Usa **exclusivamente la API oficial de X**
-- **Respeta los términos de servicio** de X
-- **No intenta bypass** ni automatización agresiva
-- Implementa **límites conservadores** de publicación
-- Requiere **revisión humana** por defecto
-
-## 🐛 Troubleshooting
-
-### Error: "API de X no disponible"
-
-**Solución:** Verificar credenciales en `.env` o usar modo exportación:
-
-```bash
-poetry run app export
-```
-
-### Error: "LLM no disponible"
-
-**Solución:** La app funciona sin LLM usando plantillas. Para habilitar LLM:
-
-```bash
-# Opción 1: Gemini (Google) - Recomendado
-poetry install -E llm-gemini
-# Agregar GEMINI_API_KEY en .env
-
-# Opción 2: OpenAI
-poetry install -E llm-openai
-# Agregar OPENAI_API_KEY en .env
-
-# Opción 3: Anthropic
-poetry install -E llm-anthropic
-# Agregar ANTHROPIC_API_KEY en .env
-```
-
-### Error: "No hay tweets aprobados"
-
-**Solución:** Primero revisar y aprobar tweets:
-
-```bash
-poetry run app review
-```
-
-### Tweets duplicados
-
-Los filtros detectan duplicados automáticamente. Si querés ajustar el umbral de similitud, editar `src/filters.py`.
-
-## 📊 Ejemplo de uso completo
-
-```bash
-# 1. Inicializar
-poetry run app init
-
-# 2. Configurar credenciales
-nano .env
-
-# 3. Configurar perfil de voz
-poetry run app edit-voice
-
-# 4. Importar artículos
-poetry run app import-articles --file articulos.csv
-
-# 5. Generar tweets
-poetry run app generate --mix "promo:10,thought:5,question:3"
-
-# 6. Revisar y aprobar
-poetry run app review
-
-# 7. Planificar
-poetry run app schedule
-
-# 8. Ver estadísticas
-poetry run app stats
-
-# 9. Publicar (modo manual)
-poetry run app post-now
-
-# O exportar para publicación manual
-poetry run app export
-```
-
-## 🔄 Workflow recomendado
-
-1. **Semanal**: Importar nuevos artículos
-2. **Semanal**: Generar lote de tweets (20-30)
-3. **Semanal**: Revisar y aprobar tweets
-4. **Automático**: Planificación y publicación según configuración
-
-## 📝 Formato de artículos CSV
-
-```csv
-titulo,url,plataforma,fecha_publicacion,tags,resumen,idioma
-"Mi artículo","https://...","linkedin","2024-01-15","filosofía,IA","Resumen breve","es"
-```
-
-## 🤝 Contribuciones
-
-Este es un proyecto personal. Si encontrás bugs o tenés sugerencias, podés:
-- Reportar issues
-- Proponer mejoras
-- Hacer fork y adaptar a tus necesidades
-
-## 📄 Licencia
-
-Uso personal. Respetar términos de servicio de X y APIs de terceros.
-
-## 🙏 Créditos
-
-Desarrollado con:
-- Python 3.11+
-- Click (CLI)
-- Rich (UI)
-- Tweepy (X API)
-- SQLite (DB)
-- Gemini / OpenAI / Anthropic (LLM opcional)
 
 ---
 
-**Nota**: Esta aplicación está diseñada para uso responsable y ético. Asegurate de cumplir con los términos de servicio de X y usar la automatización de forma transparente y no engañosa.
+## 🛡️ Terms of Use
+
+This application:
+- Uses **only the official X API**
+- **Respects X Terms of Service**
+- Implements **conservative rate limits**
+- Requires **human review by default**
+- Does **not** attempt to bypass any restrictions
+
+---
+
+## 🐛 Troubleshooting
+
+### "X API not available"
+- Check credentials in `.env`
+- Verify API access at [developer.twitter.com](https://developer.twitter.com)
+- Use export mode: `./app.sh export`
+
+### "LLM not available"
+- Works without LLM (uses templates)
+- To enable: `poetry install -E llm-gemini`
+- Add `GEMINI_API_KEY` to `.env`
+
+### "No approved tweets"
+- Run `./app.sh review` first
+
+---
+
+## 📄 License
+
+This project is licensed under the **GNU General Public License v3.0** - see the [LICENSE](LICENSE) file for details.
+
+This means:
+- ✅ You can use, modify, and distribute this software
+- ✅ You can use it for commercial purposes
+- ⚠️ Any derivative work must also be GPL v3 licensed
+- ⚠️ You must disclose the source code of derivative works
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 🙏 Credits
+
+Built with:
+- [Python 3.11+](https://www.python.org/)
+- [Click](https://click.palletsprojects.com/) - CLI framework
+- [Rich](https://rich.readthedocs.io/) - Terminal UI
+- [Tweepy](https://www.tweepy.org/) - X API wrapper
+- [Gemini](https://ai.google.dev/) - AI generation
+- [SQLite](https://www.sqlite.org/) - Database
+
+---
+
+## 📬 Contact
+
+**Federico Viola** - [@federicoviola](https://twitter.com/federicoviola)
+
+Project Link: [https://github.com/federicoviola/AppTwitter](https://github.com/federicoviola/AppTwitter)
+
+---
+
+<p align="center">
+  <strong>⚡ Made with ❤️ for content creators who value their time</strong>
+</p>
