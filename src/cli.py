@@ -1,5 +1,7 @@
 """Interfaz de línea de comandos (CLI)."""
 
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -417,20 +419,31 @@ def run(daemon, interval):
                 return 0
             
             published = 0
+            auto_attach_image = os.getenv("AUTO_ATTACH_IMAGE", "true").lower() == "true"
             
             for tweet in pending:
                 console.print(f"\n[cyan]Publicando tweet {tweet['id']}...[/cyan]")
-                console.print(f"[white]{tweet['content']}[/white]\n")
+                console.print(f"[white]{tweet['content']}[/white]")
                 
-                result = x_client.post_tweet(tweet["content"])
+                # Obtener URL del artículo si existe (para imagen automática)
+                article_url = tweet.get("article_url") if auto_attach_image else None
+                if article_url:
+                    console.print(f"[dim]Artículo: {article_url}[/dim]")
+                
+                result = x_client.post_tweet(
+                    tweet["content"],
+                    article_url=article_url
+                )
                 
                 if result and result.get("success"):
+                    has_image = result.get("has_image", False)
                     scheduler.mark_as_posted(
                         tweet["id"],
                         tweet_id=result.get("tweet_id"),
                         response=result.get("response")
                     )
-                    console.print(f"[green]✓ Publicado exitosamente[/green]")
+                    console.print(f"[green]✓ Publicado exitosamente" + 
+                                 (" (con imagen)" if has_image else "") + "[/green]")
                     published += 1
                 else:
                     error = result.get("error", "Error desconocido") if result else "Sin respuesta"
@@ -507,20 +520,26 @@ def post_now():
         )
         console.print(panel)
         
+        article_url = tweet.get("article_url")
+        if article_url:
+            console.print(f"[dim]Artículo: {article_url} (imagen automática)[/dim]")
+        
         if not Confirm.ask("¿Publicar este tweet ahora?"):
             console.print("[yellow]Cancelado[/yellow]")
             return
         
         if x_client.is_available():
-            result = x_client.post_tweet(tweet["content"])
+            result = x_client.post_tweet(tweet["content"], article_url=article_url)
             
             if result and result.get("success"):
+                has_image = result.get("has_image", False)
                 scheduler.mark_as_posted(
                     tweet["id"],
                     tweet_id=result.get("tweet_id"),
                     response=result.get("response")
                 )
-                console.print(f"[green]✓ Tweet publicado exitosamente[/green]")
+                console.print(f"[green]✓ Tweet publicado exitosamente" + 
+                             (" (con imagen)" if has_image else "") + "[/green]")
             else:
                 error = result.get("error", "Error desconocido") if result else "Sin respuesta"
                 console.print(f"[red]✗ Error: {error}[/red]")
@@ -601,6 +620,273 @@ def init():
     console.print("3. Importar artículos: app import-articles --file articulos.csv")
     console.print("4. Generar tweets: app generate")
     console.print("5. Revisar tweets: app review")
+
+
+# ==================== LinkedIn Commands ====================
+
+@cli.command()
+def linkedin_auth():
+    """Autenticarse en LinkedIn (OAuth 2.0)."""
+    from .linkedin_client import LinkedInClient
+    
+    client = LinkedInClient()
+    
+    if client.is_available():
+        user = client.get_user_info()
+        console.print(f"[green]✓ Ya estás autenticado en LinkedIn como: {user['user_name']}[/green]")
+        
+        if Confirm.ask("¿Querés volver a autenticarte?"):
+            client.logout()
+        else:
+            return
+    
+    console.print("[cyan]Iniciando autenticación de LinkedIn...[/cyan]")
+    console.print("[dim]Se abrirá un navegador para autorizar la aplicación[/dim]\n")
+    
+    if client.authenticate():
+        user = client.get_user_info()
+        console.print(f"\n[green]✓ Autenticación exitosa![/green]")
+        console.print(f"[green]Usuario: {user['user_name']}[/green]")
+    else:
+        console.print("\n[red]✗ Error en la autenticación[/red]")
+        console.print("[yellow]Verificar LINKEDIN_CLIENT_ID y LINKEDIN_CLIENT_SECRET en .env[/yellow]")
+
+
+@cli.command()
+def linkedin_status():
+    """Ver estado de conexión con LinkedIn."""
+    from .linkedin_client import LinkedInClient
+    
+    client = LinkedInClient()
+    
+    if client.is_available():
+        user = client.get_user_info()
+        console.print(f"[green]✓ Conectado a LinkedIn[/green]")
+        console.print(f"[white]Usuario: {user['user_name']}[/white]")
+        console.print(f"[dim]ID: {user['user_id']}[/dim]")
+    else:
+        console.print("[yellow]✗ No conectado a LinkedIn[/yellow]")
+        console.print("[dim]Ejecutar: app linkedin-auth[/dim]")
+
+
+@cli.command()
+@click.option("--text", "-t", required=True, help="Texto del post")
+@click.option("--url", "-u", help="URL del artículo a compartir (opcional)")
+@click.option("--title", help="Título del artículo (opcional)")
+def linkedin_post(text, url, title):
+    """Publicar un post en LinkedIn."""
+    from .linkedin_client import LinkedInClient
+    
+    client = LinkedInClient()
+    
+    if not client.is_available():
+        console.print("[red]✗ No autenticado en LinkedIn[/red]")
+        console.print("[yellow]Ejecutar primero: app linkedin-auth[/yellow]")
+        return
+    
+    # Mostrar preview
+    panel = Panel(
+        f"[white]{text}[/white]" + 
+        (f"\n\n[cyan]🔗 {url}[/cyan]" if url else ""),
+        title="Post a publicar en LinkedIn",
+        border_style="blue"
+    )
+    console.print(panel)
+    console.print(f"[dim]Caracteres: {len(text)}[/dim]\n")
+    
+    if not Confirm.ask("¿Publicar este post?"):
+        console.print("[yellow]Cancelado[/yellow]")
+        return
+    
+    result = client.post(text, article_url=url, article_title=title)
+    
+    if result and result.get("success"):
+        console.print(f"[green]✓ Post publicado en LinkedIn[/green]")
+        console.print(f"[dim]ID: {result.get('post_id')}[/dim]")
+    else:
+        error = result.get("error", "Error desconocido") if result else "Sin respuesta"
+        console.print(f"[red]✗ Error: {error}[/red]")
+
+
+@cli.command()
+def linkedin_logout():
+    """Cerrar sesión de LinkedIn."""
+    from .linkedin_client import LinkedInClient
+    
+    client = LinkedInClient()
+    
+    if not client.is_available():
+        console.print("[yellow]No hay sesión activa de LinkedIn[/yellow]")
+        return
+    
+    if Confirm.ask("¿Cerrar sesión de LinkedIn?"):
+        client.logout()
+        console.print("[green]✓ Sesión cerrada[/green]")
+
+
+@cli.command()
+@click.option("--mix", "-m", default="promo:3,thought:2,insight:1", 
+              help="Mix de tipos (ej: promo:3,thought:2,story:1,insight:1)")
+def linkedin_generate(mix):
+    """Generar posts de LinkedIn con IA."""
+    from .linkedin_generator import LinkedInGenerator
+    
+    # Parsear mix
+    mix_dict = {}
+    try:
+        for item in mix.split(","):
+            post_type, num = item.split(":")
+            mix_dict[post_type.strip()] = int(num)
+    except:
+        console.print("[red]Error: Formato de mix inválido. Usar: tipo:cantidad,tipo:cantidad[/red]")
+        console.print("[yellow]Tipos válidos: promo, thought, story, insight[/yellow]")
+        sys.exit(1)
+    
+    with Database() as db:
+        voice = VoiceProfile()
+        generator = LinkedInGenerator(db, voice)
+        
+        if not generator.llm_client:
+            console.print("[yellow]⚠ No hay cliente LLM disponible[/yellow]")
+            console.print("[yellow]Configurar GEMINI_API_KEY en .env[/yellow]")
+            return
+        
+        console.print(f"[cyan]Generando {sum(mix_dict.values())} posts de LinkedIn...[/cyan]")
+        
+        post_ids = generator.generate_batch(mix_dict)
+        
+        console.print(f"[green]✓ {len(post_ids)} posts de LinkedIn generados[/green]")
+        console.print("[dim]Revisar con: app linkedin-review[/dim]")
+
+
+@cli.command()
+@click.option("--limit", "-l", default=10, help="Número de posts a revisar")
+def linkedin_review(limit):
+    """Revisar y publicar posts de LinkedIn generados."""
+    from .linkedin_client import LinkedInClient
+    
+    with Database() as db:
+        # Obtener posts de LinkedIn pendientes de revisión
+        posts = db.fetchall(
+            """
+            SELECT c.*, q.id as queue_id, q.status
+            FROM tweet_candidates c
+            LEFT JOIN tweet_queue q ON c.id = q.candidate_id
+            WHERE c.tweet_type LIKE 'linkedin_%'
+            AND (q.status IS NULL OR q.status = 'drafted')
+            ORDER BY c.created_at DESC
+            LIMIT ?
+            """,
+            (limit,)
+        )
+        
+        if not posts:
+            console.print("[yellow]No hay posts de LinkedIn pendientes de revisión[/yellow]")
+            console.print("[dim]Generar con: app linkedin-generate[/dim]")
+            return
+        
+        # Verificar conexión a LinkedIn
+        client = LinkedInClient()
+        linkedin_available = client.is_available()
+        
+        if not linkedin_available:
+            console.print("[yellow]⚠ No conectado a LinkedIn. Solo podrás aprobar para después.[/yellow]")
+            console.print("[dim]Conectar con: app linkedin-auth[/dim]\n")
+        
+        console.print(f"\n[cyan]Revisando {len(posts)} posts de LinkedIn[/cyan]\n")
+        
+        published = 0
+        approved = 0
+        skipped = 0
+        
+        for i, post in enumerate(posts, 1):
+            # Parsear metadata
+            try:
+                metadata = json.loads(post.get("metadata", "{}"))
+            except:
+                metadata = {}
+            
+            # Mostrar post
+            post_type = post['tweet_type'].replace('linkedin_', '')
+            
+            panel = Panel(
+                f"[white]{post['content']}[/white]\n\n"
+                f"[dim]Tipo: {post_type} | ID: {post['id']} | "
+                f"Caracteres: {len(post['content'])} | "
+                f"Generador: {metadata.get('provider', 'template')}[/dim]",
+                title=f"[cyan]Post {i}/{len(posts)}[/cyan]",
+                border_style="blue"
+            )
+            console.print(panel)
+            
+            # Opciones
+            if linkedin_available:
+                console.print("[dim]Opciones: [p]ublicar ahora, [a]probar para después, [s]kip, [q]uit[/dim]")
+                action = click.prompt(
+                    "Acción",
+                    type=click.Choice(["p", "a", "s", "q"], case_sensitive=False),
+                    default="a"
+                )
+            else:
+                console.print("[dim]Opciones: [a]probar para después, [s]kip, [q]uit[/dim]")
+                action = click.prompt(
+                    "Acción",
+                    type=click.Choice(["a", "s", "q"], case_sensitive=False),
+                    default="a"
+                )
+            
+            if action == "p" and linkedin_available:
+                # Publicar ahora
+                result = client.post(
+                    post['content'],
+                    article_url=post.get('article_url'),
+                    article_title=post.get('article_title')
+                )
+                
+                if result and result.get("success"):
+                    console.print(f"[green]✓ Publicado en LinkedIn[/green]\n")
+                    # Marcar como publicado
+                    if post.get('queue_id'):
+                        db.execute("UPDATE tweet_queue SET status = 'posted' WHERE id = ?", (post['queue_id'],))
+                    published += 1
+                else:
+                    error = result.get("error", "Error desconocido") if result else "Sin respuesta"
+                    console.print(f"[red]✗ Error: {error}[/red]\n")
+            
+            elif action == "a":
+                # Aprobar para después
+                if not post.get('queue_id'):
+                    # Agregar a cola
+                    db.insert("tweet_queue", {
+                        "candidate_id": post['id'],
+                        "status": "approved"
+                    })
+                else:
+                    db.execute("UPDATE tweet_queue SET status = 'approved' WHERE id = ?", (post['queue_id'],))
+                console.print("[green]✓ Aprobado[/green]\n")
+                approved += 1
+            
+            elif action == "s":
+                if post.get('queue_id'):
+                    db.execute("UPDATE tweet_queue SET status = 'skipped' WHERE id = ?", (post['queue_id'],))
+                else:
+                    db.insert("tweet_queue", {
+                        "candidate_id": post['id'],
+                        "status": "skipped"
+                    })
+                console.print("[yellow]⊘ Omitido[/yellow]\n")
+                skipped += 1
+            
+            elif action == "q":
+                break
+        
+        console.print(f"\n[green]Revisión completada:[/green]")
+        if published > 0:
+            console.print(f"  📤 {published} publicados")
+        if approved > 0:
+            console.print(f"  ✅ {approved} aprobados")
+        if skipped > 0:
+            console.print(f"  ⊘ {skipped} omitidos")
 
 
 if __name__ == "__main__":

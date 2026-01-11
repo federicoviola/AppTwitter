@@ -37,6 +37,7 @@ env/
 # Database
 data/*.db
 data/*.db-journal
+data/.linkedin_token
 
 # Logs
 logs/*.log

@@ -106,6 +106,18 @@ Get your key at: https://aistudio.google.com/app/apikey
 ./app.sh edit-voice
 ```
 
+4. **(Optional) Set up LinkedIn** in `.env`:
+```bash
+LINKEDIN_CLIENT_ID=your_client_id
+LINKEDIN_CLIENT_SECRET=your_client_secret
+```
+Get your credentials at: https://www.linkedin.com/developers/apps
+
+Then authenticate:
+```bash
+./app.sh linkedin-auth
+```
+
 ---
 
 ## 📖 Usage
@@ -148,6 +160,10 @@ Get your key at: https://aistudio.google.com/app/apikey
 | `stats` | Show statistics |
 | `edit-voice` | Edit voice profile |
 | `set-voice` | Set voice profile from file |
+| `linkedin-auth` | Authenticate with LinkedIn (OAuth) |
+| `linkedin-status` | Check LinkedIn connection status |
+| `linkedin-post` | Publish a post to LinkedIn |
+| `linkedin-logout` | Log out from LinkedIn |
 
 ### Tweet Types
 

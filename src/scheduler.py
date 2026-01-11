@@ -159,9 +159,12 @@ class TweetScheduler:
         
         return self.db.fetchall(
             """
-            SELECT q.id, q.candidate_id, q.scheduled_at, c.content, c.tweet_type
+            SELECT q.id, q.candidate_id, q.scheduled_at, 
+                   c.content, c.tweet_type, c.article_id,
+                   a.url as article_url, a.titulo as article_title
             FROM tweet_queue q
             JOIN tweet_candidates c ON q.candidate_id = c.id
+            LEFT JOIN articulos a ON c.article_id = a.id
             WHERE q.status = 'scheduled' 
             AND q.scheduled_at <= ?
             ORDER BY q.scheduled_at ASC
