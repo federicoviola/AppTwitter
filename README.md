@@ -25,33 +25,35 @@
 
 ## ✨ Features
 
-### 🤖 AI-Powered Tweet Generation
+### 🤖 AI-Powered Content Generation
+- **Multi-Platform Support**: Twitter/X and LinkedIn
 - **Multiple LLM Support**: Gemini (recommended), OpenAI, or Anthropic
 - **Voice Profile**: Define your tone, themes, and argumentative patterns
 - **Smart Templates**: Fallback system when LLM is unavailable
-- **Content Types**: Promotional tweets, thought pieces, questions, and threads
+- **Content Types**: Promotional posts, thought pieces, questions, insights, and stories
 
 ### 📥 Article Import
 - Import from **CSV** or **JSON** files
 - Support for **LinkedIn** and **Substack** articles
 - Interactive article addition mode
-- Automatic metadata extraction
+- Automatic metadata extraction (links, titles)
 
 ### 🛡️ Safety & Quality
 - **Duplicate Detection**: Semantic similarity filtering
 - **Prohibited Words**: Block unwanted content
 - **Aggressive Language Filter**: Keep your brand safe
-- **Human Review**: Required by default before publishing
+- **Human Review**: Required by default before publishing everything
 
-### 📅 Smart Scheduling
+### 📅 Unified Smart Scheduling
+- **Cross-Platform Queue**: Manage Twitter and LinkedIn from a single view
 - **Time Window**: Configure your optimal posting hours
-- **Spacing Control**: Minimum time between tweets
-- **Daily Limits**: Respect platform guidelines
-- **Daemon Mode**: Run continuously in background
+- **Spacing Control**: Minimum time between posts
+- **Daily Limits**: Respect platform guidelines (LinkedIn/X)
+- **Unified Daemon Mode**: Run one process to publish on both platforms
 
 ### 🔒 Privacy-First
 - **100% Local**: All data stored on your machine
-- **No Cloud Dependencies**: Works offline (except for LLM/X API)
+- **No Cloud Dependencies**: Works offline (except for LLM/APIs)
 - **SQLite Database**: Portable and lightweight
 - **Secure Credentials**: Environment variables only
 
@@ -101,12 +103,7 @@ GEMINI_API_KEY=your_gemini_api_key
 ```
 Get your key at: https://aistudio.google.com/app/apikey
 
-3. **Configure your voice profile**:
-```bash
-./app.sh edit-voice
-```
-
-4. **(Optional) Set up LinkedIn** in `.env`:
+3. **Set up LinkedIn credentials** in `.env`:
 ```bash
 LINKEDIN_CLIENT_ID=your_client_id
 LINKEDIN_CLIENT_SECRET=your_client_secret
@@ -116,6 +113,11 @@ Get your credentials at: https://www.linkedin.com/developers/apps
 Then authenticate:
 ```bash
 ./app.sh linkedin-auth
+```
+
+4. **Configure your voice profile**:
+```bash
+./app.sh edit-voice
 ```
 
 ---
@@ -128,16 +130,22 @@ Then authenticate:
 # 1. Import your articles
 ./app.sh import-articles --file articles.csv
 
-# 2. Generate tweets with custom mix
-./app.sh generate --mix "promo:10,thought:5,question:3"
+# 2. Generate content for LinkedIn & Twitter
+./app.sh generate --mix "promo:5,thought:3"
+./app.sh linkedin-generate --mix "promo:5,story:2"
 
 # 3. Review and approve
-./app.sh review
+./app.sh review            # Review Twitter candidates
+./app.sh linkedin-review   # Review LinkedIn candidates
 
-# 4. Schedule approved tweets
-./app.sh schedule
+# 4. Schedule approved content
+./app.sh schedule          # Schedule Twitter
+./app.sh linkedin-schedule # Schedule LinkedIn
 
-# 5. Run the publisher (daemon mode)
+# 5. List everything scheduled
+./app.sh list-scheduled
+
+# 6. Run the unified publisher (daemon mode)
 ./app.sh run --daemon --interval 300
 ```
 
@@ -149,21 +157,21 @@ Then authenticate:
 | `import-articles` | Import articles from CSV/JSON |
 | `add-article` | Add article interactively |
 | `list-articles` | List imported articles |
-| `generate` | Generate tweet candidates |
-| `review` | Review and approve tweets |
-| `schedule` | Schedule approved tweets |
-| `list-scheduled` | Show scheduled tweets |
-| `reschedule` | Change tweet schedule |
-| `run` | Publish scheduled tweets |
-| `post-now` | Publish one tweet immediately |
-| `export` | Export tweets to file |
-| `stats` | Show statistics |
+| `generate` | Generate Twitter candidates |
+| `linkedin-generate` | Generate LinkedIn candidates |
+| `review` | Review and approve Twitter posts |
+| `linkedin-review` | Review and approve LinkedIn posts |
+| `schedule` | Schedule approved Twitter tweets |
+| `linkedin-schedule` | Schedule approved LinkedIn posts |
+| `list-scheduled` | Show ALL scheduled posts (X + LinkedIn) |
+| `run` | Unified publisher (publishes both platforms) |
+| `stats` | Show statistics (global) |
 | `edit-voice` | Edit voice profile |
-| `set-voice` | Set voice profile from file |
 | `linkedin-auth` | Authenticate with LinkedIn (OAuth) |
 | `linkedin-status` | Check LinkedIn connection status |
-| `linkedin-post` | Publish a post to LinkedIn |
+| `linkedin-post` | Publish a post to LinkedIn manually |
 | `linkedin-logout` | Log out from LinkedIn |
+| `export` | Export tweets to file |
 
 ### Tweet Types
 

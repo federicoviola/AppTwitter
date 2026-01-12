@@ -244,59 +244,96 @@ def schedule():
 
 
 @cli.command()
-def list_scheduled():
-    """Listar tweets planificados con detalles."""
+@click.option("--twitter-only", is_flag=True, help="Solo mostrar programados de Twitter")
+@click.option("--linkedin-only", is_flag=True, help="Solo mostrar programados de LinkedIn")
+def list_scheduled(twitter_only, linkedin_only):
+    """Listar publicaciones programadas (Twitter y LinkedIn)."""
     with Database() as db:
-        tweets = db.fetchall(
-            """
+        query = """
             SELECT 
                 q.id,
                 c.content,
                 c.tweet_type,
+                c.metadata,
                 q.scheduled_at,
                 q.status
             FROM tweet_queue q
             JOIN tweet_candidates c ON q.candidate_id = c.id
             WHERE q.status = 'scheduled'
-            ORDER BY q.scheduled_at
-            """
-        )
+        """
         
-        if not tweets:
-            console.print("[yellow]No hay tweets planificados[/yellow]")
+        if twitter_only:
+            query += " AND c.tweet_type NOT LIKE 'linkedin_%'"
+        elif linkedin_only:
+            query += " AND c.tweet_type LIKE 'linkedin_%'"
+            
+        query += " ORDER BY q.scheduled_at"
+        
+        posts = db.fetchall(query)
+        
+        if not posts:
+            console.print("[yellow]No hay publicaciones programadas[/yellow]")
             return
         
-        console.print(f"\n[bold cyan]📅 Tweets Planificados ({len(tweets)})[/bold cyan]\n")
+        console.print(f"\n[bold cyan]📅 Publicaciones Programadas ({len(posts)})[/bold cyan]\n")
         
-        for i, tweet in enumerate(tweets, 1):
-            # Formato de fecha más legible
+        for i, post in enumerate(posts, 1):
             from datetime import datetime
+            
+            # Determinar plataforma
+            is_linkedin = post['tweet_type'].startswith('linkedin_')
+            platform_name = "LinkedIn" if is_linkedin else "Twitter/X"
+            platform_color = "blue" if is_linkedin else "cyan"
+            platform_icon = "💼" if is_linkedin else "🐦"
+            
+            # Parsear metadata
+            import json
             try:
-                dt = datetime.fromisoformat(tweet["scheduled_at"])
+                metadata = json.loads(post.get("metadata", "{}"))
+            except:
+                metadata = {}
+            
+            # Formato de fecha
+            try:
+                dt = datetime.fromisoformat(post["scheduled_at"])
                 fecha_str = dt.strftime("%d/%m/%Y %H:%M")
             except:
-                fecha_str = tweet["scheduled_at"]
+                fecha_str = post["scheduled_at"]
             
-            # Tipo de tweet con emoji
+            # Tipo de post
+            p_type = post['tweet_type'].replace('linkedin_', '')
             tipo_emoji = {
                 "promo": "📢",
                 "thought": "💭",
                 "question": "❓",
-                "thread": "🧵"
+                "thread": "🧵",
+                "story": "📖",
+                "insight": "💡"
             }
-            emoji = tipo_emoji.get(tweet["tweet_type"], "📝")
+            emoji = tipo_emoji.get(p_type, "📝")
+            
+            # Info extra (links para LinkedIn promo)
+            extra_info = ""
+            if is_linkedin and p_type == "promo" and metadata.get("article_url"):
+                extra_info = f"\n[blue]🔗 {metadata.get('article_url')}[/blue]"
+            
+            # Limitar contenido para vista de lista
+            content_preview = post['content']
+            if len(content_preview) > 300:
+                content_preview = content_preview[:297] + "..."
             
             panel = Panel(
-                f"[white]{tweet['content']}[/white]\n\n"
-                f"[dim]{emoji} {tweet['tweet_type'].capitalize()} | "
+                f"[white]{content_preview}[/white]{extra_info}\n\n"
+                f"[{platform_color}]{platform_icon} {platform_name}[/{platform_color}] | "
+                f"{emoji} {p_type.capitalize()} | "
                 f"🕐 {fecha_str} | "
-                f"📏 {len(tweet['content'])} caracteres[/dim]",
-                title=f"[cyan]Tweet #{i} (ID: {tweet['id']})[/cyan]",
-                border_style="blue"
+                f"📏 {len(post['content'])} chars",
+                title=f"[cyan]Post #{i} (ID: {post['id']})[/cyan]",
+                border_style=platform_color
             )
             console.print(panel)
         
-        console.print(f"\n[green]Total: {len(tweets)} tweets programados[/green]\n")
+        console.print(f"\n[green]Total: {len(posts)} publicaciones programadas[/green]\n")
 
 
 @cli.command()
@@ -391,18 +428,23 @@ def reschedule(tweet_id, new_datetime, minutes, hours, days):
 @cli.command()
 @click.option("--daemon", "-d", is_flag=True, help="Ejecutar en modo daemon (loop continuo)")
 @click.option("--interval", "-i", default=60, help="Intervalo de verificación en segundos (modo daemon)")
-def run(daemon, interval):
-    """Ejecutar publicación de tweets planificados."""
+@click.option("--twitter-only", is_flag=True, help="Solo publicar en Twitter")
+@click.option("--linkedin-only", is_flag=True, help="Solo publicar en LinkedIn")
+def run(daemon, interval, twitter_only, linkedin_only):
+    """Ejecutar publicación de tweets y posts de LinkedIn programados."""
     import time
+    import json
+    from datetime import datetime
+    from .linkedin_client import LinkedInClient
     
     with Database() as db:
         scheduler = TweetScheduler(db)
         x_client = XClient()
+        linkedin_client = LinkedInClient()
         
-        if not x_client.is_available():
-            console.print("[yellow]⚠ API de X no disponible. Usar modo exportación.[/yellow]")
-            console.print("[yellow]Ejecutar: app export[/yellow]")
-            return
+        # Verificar qué plataformas están disponibles
+        x_available = x_client.is_available()
+        linkedin_available = linkedin_client.is_available()
         
         auto_post = get_env_bool("AUTO_POST_ENABLED", False)
         
@@ -411,21 +453,69 @@ def run(daemon, interval):
             console.print("[yellow]Habilitar en .env: AUTO_POST_ENABLED=true[/yellow]")
             return
         
-        def publish_pending():
-            pending = scheduler.get_pending_tweets()
+        # Mostrar estado de conexiones
+        console.print("\n[bold cyan]📡 Estado de conexiones[/bold cyan]")
+        
+        if not linkedin_only:
+            if x_available:
+                console.print("[green]  ✓ Twitter/X: Conectado[/green]")
+            else:
+                console.print("[yellow]  ✗ Twitter/X: No disponible[/yellow]")
+        
+        if not twitter_only:
+            if linkedin_available:
+                user = linkedin_client.get_user_info()
+                console.print(f"[green]  ✓ LinkedIn: Conectado ({user['user_name']})[/green]")
+            else:
+                console.print("[yellow]  ✗ LinkedIn: No disponible[/yellow]")
+        
+        console.print("")
+        
+        # Verificar que al menos una plataforma esté disponible
+        if twitter_only and not x_available:
+            console.print("[red]✗ Twitter no disponible[/red]")
+            return
+        
+        if linkedin_only and not linkedin_available:
+            console.print("[red]✗ LinkedIn no disponible[/red]")
+            return
+        
+        if not x_available and not linkedin_available:
+            console.print("[red]✗ Ninguna plataforma disponible[/red]")
+            return
+        
+        def publish_twitter_pending():
+            """Publicar tweets pendientes en Twitter."""
+            if not x_available or linkedin_only:
+                return 0
+            
+            # Obtener tweets pendientes (excluyendo LinkedIn)
+            pending = db.fetchall(
+                """
+                SELECT q.id, q.candidate_id, q.scheduled_at, 
+                       c.content, c.tweet_type, c.article_id,
+                       a.url as article_url, a.titulo as article_title
+                FROM tweet_queue q
+                JOIN tweet_candidates c ON q.candidate_id = c.id
+                LEFT JOIN articulos a ON c.article_id = a.id
+                WHERE q.status = 'scheduled' 
+                AND q.scheduled_at <= ?
+                AND c.tweet_type NOT LIKE 'linkedin_%'
+                ORDER BY q.scheduled_at ASC
+                """,
+                (datetime.now().isoformat(),)
+            )
             
             if not pending:
-                console.print("[dim]No hay tweets pendientes de publicación[/dim]")
                 return 0
             
             published = 0
             auto_attach_image = os.getenv("AUTO_ATTACH_IMAGE", "true").lower() == "true"
             
             for tweet in pending:
-                console.print(f"\n[cyan]Publicando tweet {tweet['id']}...[/cyan]")
-                console.print(f"[white]{tweet['content']}[/white]")
+                console.print(f"\n[blue]🐦 Twitter[/blue] - Publicando tweet {tweet['id']}...")
+                console.print(f"[white]{tweet['content'][:100]}...[/white]")
                 
-                # Obtener URL del artículo si existe (para imagen automática)
                 article_url = tweet.get("article_url") if auto_attach_image else None
                 if article_url:
                     console.print(f"[dim]Artículo: {article_url}[/dim]")
@@ -442,7 +532,7 @@ def run(daemon, interval):
                         tweet_id=result.get("tweet_id"),
                         response=result.get("response")
                     )
-                    console.print(f"[green]✓ Publicado exitosamente" + 
+                    console.print(f"[green]✓ Publicado en Twitter" + 
                                  (" (con imagen)" if has_image else "") + "[/green]")
                     published += 1
                 else:
@@ -450,20 +540,114 @@ def run(daemon, interval):
                     scheduler.mark_as_failed(tweet["id"], error)
                     console.print(f"[red]✗ Error: {error}[/red]")
                 
-                # Esperar entre publicaciones
                 time.sleep(5)
             
             return published
         
+        def publish_linkedin_pending():
+            """Publicar posts pendientes en LinkedIn."""
+            if not linkedin_available or twitter_only:
+                return 0
+            
+            now = datetime.now()
+            
+            # Obtener posts de LinkedIn pendientes
+            pending = db.fetchall(
+                """
+                SELECT q.id, q.candidate_id, q.scheduled_at, 
+                       c.content, c.tweet_type, c.metadata
+                FROM tweet_queue q
+                JOIN tweet_candidates c ON q.candidate_id = c.id
+                WHERE c.tweet_type LIKE 'linkedin_%'
+                AND q.status = 'scheduled'
+                AND q.scheduled_at <= ?
+                ORDER BY q.scheduled_at ASC
+                """,
+                (now.isoformat(),)
+            )
+            
+            if not pending:
+                return 0
+            
+            published = 0
+            
+            for post in pending:
+                # Parsear metadata
+                try:
+                    metadata = json.loads(post.get("metadata", "{}"))
+                except:
+                    metadata = {}
+                
+                post_type = post['tweet_type'].replace('linkedin_', '')
+                console.print(f"\n[blue]💼 LinkedIn[/blue] - Publicando {post_type} {post['id']}...")
+                console.print(f"[white]{post['content'][:100]}...[/white]")
+                
+                article_url = metadata.get("article_url")
+                article_title = metadata.get("article_title")
+                
+                if article_url:
+                    console.print(f"[dim]Artículo: {article_url}[/dim]")
+                
+                result = linkedin_client.post(
+                    post['content'],
+                    article_url=article_url,
+                    article_title=article_title
+                )
+                
+                if result and result.get("success"):
+                    db.execute(
+                        """
+                        UPDATE tweet_queue 
+                        SET status = 'posted', posted_at = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (now.isoformat(), now.isoformat(), post['id'])
+                    )
+                    console.print(f"[green]✓ Publicado en LinkedIn[/green]")
+                    published += 1
+                else:
+                    error = result.get("error", "Error desconocido") if result else "Sin respuesta"
+                    db.execute(
+                        """
+                        UPDATE tweet_queue 
+                        SET status = 'failed', updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (now.isoformat(), post['id'])
+                    )
+                    console.print(f"[red]✗ Error: {error}[/red]")
+                
+                time.sleep(3)
+            
+            return published
+        
+        def publish_all_pending():
+            """Publicar todos los posts pendientes."""
+            twitter_count = publish_twitter_pending()
+            linkedin_count = publish_linkedin_pending()
+            
+            total = twitter_count + linkedin_count
+            
+            if total == 0:
+                console.print("[dim]No hay posts pendientes de publicación[/dim]")
+            
+            return twitter_count, linkedin_count
+        
         if daemon:
-            console.print(f"[cyan]Modo daemon activado. Verificando cada {interval} segundos.[/cyan]")
+            console.print(f"[cyan]🔄 Modo daemon activado. Verificando cada {interval} segundos.[/cyan]")
             console.print("[dim]Presionar Ctrl+C para detener[/dim]\n")
             
             try:
                 while True:
-                    published = publish_pending()
-                    if published > 0:
-                        console.print(f"\n[green]✓ {published} tweets publicados[/green]\n")
+                    twitter_count, linkedin_count = publish_all_pending()
+                    
+                    if twitter_count > 0 or linkedin_count > 0:
+                        parts = []
+                        if twitter_count > 0:
+                            parts.append(f"🐦 {twitter_count} tweets")
+                        if linkedin_count > 0:
+                            parts.append(f"💼 {linkedin_count} LinkedIn")
+                        console.print(f"\n[green]✓ Publicados: {', '.join(parts)}[/green]\n")
                     
                     time.sleep(interval)
             
@@ -471,8 +655,18 @@ def run(daemon, interval):
                 console.print("\n[yellow]Detenido por usuario[/yellow]")
         
         else:
-            published = publish_pending()
-            console.print(f"\n[green]✓ {published} tweets publicados[/green]")
+            twitter_count, linkedin_count = publish_all_pending()
+            
+            parts = []
+            if twitter_count > 0:
+                parts.append(f"🐦 {twitter_count} tweets")
+            if linkedin_count > 0:
+                parts.append(f"💼 {linkedin_count} LinkedIn")
+            
+            if parts:
+                console.print(f"\n[green]✓ Publicados: {', '.join(parts)}[/green]")
+            else:
+                console.print(f"\n[green]✓ Todo al día, nada pendiente[/green]")
 
 
 @cli.command()
@@ -806,14 +1000,31 @@ def linkedin_review(limit):
             except:
                 metadata = {}
             
+            # Obtener article_url y article_title del metadata
+            article_url = metadata.get("article_url")
+            article_title = metadata.get("article_title")
+            
             # Mostrar post
             post_type = post['tweet_type'].replace('linkedin_', '')
             
-            panel = Panel(
-                f"[white]{post['content']}[/white]\n\n"
-                f"[dim]Tipo: {post_type} | ID: {post['id']} | "
+            # Construir contenido del panel
+            panel_content = f"[white]{post['content']}[/white]"
+            
+            # Si es promo, mostrar el link del artículo
+            if post_type == "promo" and article_url:
+                panel_content += f"\n\n[cyan]🔗 Artículo: {article_title or 'Sin título'}[/cyan]"
+                panel_content += f"\n[blue]{article_url}[/blue]"
+            elif post_type == "promo" and not article_url:
+                panel_content += "\n\n[yellow]⚠ Sin link de artículo asociado[/yellow]"
+            
+            panel_content += (
+                f"\n\n[dim]Tipo: {post_type} | ID: {post['id']} | "
                 f"Caracteres: {len(post['content'])} | "
-                f"Generador: {metadata.get('provider', 'template')}[/dim]",
+                f"Generador: {metadata.get('provider', 'template')}[/dim]"
+            )
+            
+            panel = Panel(
+                panel_content,
                 title=f"[cyan]Post {i}/{len(posts)}[/cyan]",
                 border_style="blue"
             )
@@ -839,8 +1050,8 @@ def linkedin_review(limit):
                 # Publicar ahora
                 result = client.post(
                     post['content'],
-                    article_url=post.get('article_url'),
-                    article_title=post.get('article_title')
+                    article_url=article_url,
+                    article_title=article_title
                 )
                 
                 if result and result.get("success"):
@@ -887,6 +1098,80 @@ def linkedin_review(limit):
             console.print(f"  ✅ {approved} aprobados")
         if skipped > 0:
             console.print(f"  ⊘ {skipped} omitidos")
+
+
+@cli.command()
+@click.option("--posts-per-day", "-p", default=2, help="Número de posts por día (default: 2)")
+@click.option("--start-hour", "-s", default=9, help="Hora de inicio (default: 9)")
+@click.option("--interval-hours", "-i", default=6, help="Intervalo entre posts en horas (default: 6)")
+def linkedin_schedule(posts_per_day, start_hour, interval_hours):
+    """Agendar posts de LinkedIn aprobados."""
+    from datetime import datetime, timedelta
+    
+    with Database() as db:
+        # Obtener posts de LinkedIn aprobados sin programar
+        approved = db.fetchall(
+            """
+            SELECT q.id, q.candidate_id, c.tweet_type
+            FROM tweet_queue q
+            JOIN tweet_candidates c ON q.candidate_id = c.id
+            WHERE c.tweet_type LIKE 'linkedin_%'
+            AND q.status = 'approved'
+            AND q.scheduled_at IS NULL
+            ORDER BY q.created_at ASC
+            """
+        )
+        
+        if not approved:
+            console.print("[yellow]No hay posts de LinkedIn aprobados para agendar[/yellow]")
+            console.print("[dim]Revisar posts con: app linkedin-review[/dim]")
+            return
+        
+        console.print(f"\n[cyan]Agendando {len(approved)} posts de LinkedIn[/cyan]")
+        console.print(f"[dim]Configuración: {posts_per_day} posts/día, desde las {start_hour}:00, cada {interval_hours}h[/dim]\n")
+        
+        # Calcular slots
+        now = datetime.now()
+        current_slot = now.replace(hour=start_hour, minute=0, second=0, microsecond=0)
+        
+        # Si ya pasó el primer slot de hoy, empezar mañana
+        if current_slot <= now:
+            current_slot += timedelta(days=1)
+        
+        scheduled_count = 0
+        posts_today = 0
+        
+        for post in approved:
+            # Verificar límite diario
+            if posts_today >= posts_per_day:
+                # Siguiente día
+                current_slot = current_slot.replace(hour=start_hour) + timedelta(days=1)
+                posts_today = 0
+            
+            # Programar
+            db.execute(
+                """
+                UPDATE tweet_queue 
+                SET scheduled_at = ?, status = 'scheduled', updated_at = ?
+                WHERE id = ?
+                """,
+                (current_slot.isoformat(), datetime.now().isoformat(), post['id'])
+            )
+            
+            post_type = post['tweet_type'].replace('linkedin_', '')
+            console.print(f"  📅 {post_type.capitalize()} → {current_slot.strftime('%d/%m/%Y %H:%M')}")
+            
+            scheduled_count += 1
+            posts_today += 1
+            
+            # Avanzar al siguiente slot del día
+            current_slot += timedelta(hours=interval_hours)
+        
+        console.print(f"\n[green]✓ {scheduled_count} posts de LinkedIn programados[/green]")
+        console.print("[dim]Ver programación: app linkedin-list-scheduled[/dim]")
+        console.print("[dim]Ejecutar: app run (publica Twitter + LinkedIn)[/dim]")
+
+
 
 
 if __name__ == "__main__":

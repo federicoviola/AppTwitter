@@ -376,13 +376,26 @@ A veces dar un paso atrás es la forma más rápida de avanzar.
     
     def save_post(self, post: Dict) -> int:
         """Guardar post de LinkedIn en base de datos."""
+        # Preparar metadata incluyendo article_url y article_title
+        existing_metadata = post.get("metadata", "{}")
+        try:
+            metadata = json.loads(existing_metadata) if isinstance(existing_metadata, str) else existing_metadata
+        except json.JSONDecodeError:
+            metadata = {}
+        
+        # Agregar article_url y article_title al metadata
+        if post.get("article_url"):
+            metadata["article_url"] = post["article_url"]
+        if post.get("article_title"):
+            metadata["article_title"] = post["article_title"]
+        
         # Usamos la misma tabla pero con metadata diferente
         db_post = {
             "content": post["content"],
             "content_hash": post["content_hash"],
             "tweet_type": f"linkedin_{post['post_type']}",  # Prefijo para distinguir
             "article_id": post.get("article_id"),
-            "metadata": post.get("metadata", "{}")
+            "metadata": json.dumps(metadata)
         }
         return self.db.insert("tweet_candidates", db_post)
     
