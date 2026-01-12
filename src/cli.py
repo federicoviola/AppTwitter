@@ -595,26 +595,18 @@ def run(daemon, interval, twitter_only, linkedin_only):
                 )
                 
                 if result and result.get("success"):
-                    db.execute(
-                        """
-                        UPDATE tweet_queue 
-                        SET status = 'posted', posted_at = ?, updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (now.isoformat(), now.isoformat(), post['id'])
+                    # Marcar como publicado usando el scheduler para consistencia
+                    scheduler.mark_as_posted(
+                        post['id'],
+                        tweet_id=result.get("post_id"),
+                        response=result.get("response")
                     )
                     console.print(f"[green]✓ Publicado en LinkedIn[/green]")
                     published += 1
                 else:
                     error = result.get("error", "Error desconocido") if result else "Sin respuesta"
-                    db.execute(
-                        """
-                        UPDATE tweet_queue 
-                        SET status = 'failed', updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (now.isoformat(), post['id'])
-                    )
+                    # Marcar como fallido
+                    scheduler.mark_as_failed(post['id'], error)
                     console.print(f"[red]✗ Error: {error}[/red]")
                 
                 time.sleep(3)
