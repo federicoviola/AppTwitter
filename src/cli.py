@@ -584,14 +584,18 @@ def run(daemon, interval, twitter_only, linkedin_only):
                 
                 article_url = metadata.get("article_url")
                 article_title = metadata.get("article_title")
+                image_url = metadata.get("article_image_url")
                 
                 if article_url:
                     console.print(f"[dim]Artículo: {article_url}[/dim]")
+                if image_url:
+                    console.print(f"[dim]Imagen: {image_url}[/dim]")
                 
                 result = linkedin_client.post(
                     post['content'],
                     article_url=article_url,
-                    article_title=article_title
+                    article_title=article_title,
+                    image_url=image_url
                 )
                 
                 if result and result.get("success"):
@@ -859,7 +863,8 @@ def linkedin_status():
 @click.option("--text", "-t", required=True, help="Texto del post")
 @click.option("--url", "-u", help="URL del artículo a compartir (opcional)")
 @click.option("--title", help="Título del artículo (opcional)")
-def linkedin_post(text, url, title):
+@click.option("--image-url", help="URL de la imagen del artículo (opcional)")
+def linkedin_post(text, url, title, image_url):
     """Publicar un post en LinkedIn."""
     from .linkedin_client import LinkedInClient
     
@@ -873,7 +878,8 @@ def linkedin_post(text, url, title):
     # Mostrar preview
     panel = Panel(
         f"[white]{text}[/white]" + 
-        (f"\n\n[cyan]🔗 {url}[/cyan]" if url else ""),
+        (f"\n\n[cyan]🔗 {url}[/cyan]" if url else "") +
+        (f"\n[dim]🖼️ {image_url}[/dim]" if image_url else ""),
         title="Post a publicar en LinkedIn",
         border_style="blue"
     )
@@ -884,7 +890,7 @@ def linkedin_post(text, url, title):
         console.print("[yellow]Cancelado[/yellow]")
         return
     
-    result = client.post(text, article_url=url, article_title=title)
+    result = client.post(text, article_url=url, article_title=title, image_url=image_url)
     
     if result and result.get("success"):
         console.print(f"[green]✓ Post publicado en LinkedIn[/green]")
@@ -995,6 +1001,7 @@ def linkedin_review(limit):
             # Obtener article_url y article_title del metadata
             article_url = metadata.get("article_url")
             article_title = metadata.get("article_title")
+            image_url = metadata.get("article_image_url")
             
             # Mostrar post
             post_type = post['tweet_type'].replace('linkedin_', '')
@@ -1006,6 +1013,8 @@ def linkedin_review(limit):
             if post_type == "promo" and article_url:
                 panel_content += f"\n\n[cyan]🔗 Artículo: {article_title or 'Sin título'}[/cyan]"
                 panel_content += f"\n[blue]{article_url}[/blue]"
+                if image_url:
+                    panel_content += f"\n[dim]🖼️ Imagen: {image_url}[/dim]"
             elif post_type == "promo" and not article_url:
                 panel_content += "\n\n[yellow]⚠ Sin link de artículo asociado[/yellow]"
             
@@ -1043,7 +1052,8 @@ def linkedin_review(limit):
                 result = client.post(
                     post['content'],
                     article_url=article_url,
-                    article_title=article_title
+                    article_title=article_title,
+                    image_url=image_url
                 )
                 
                 if result and result.get("success"):
@@ -1163,6 +1173,134 @@ def linkedin_schedule(posts_per_day, start_hour, interval_hours):
         console.print("[dim]Ver programación: app linkedin-list-scheduled[/dim]")
         console.print("[dim]Ejecutar: app run (publica Twitter + LinkedIn)[/dim]")
 
+
+@cli.command()
+@click.option("--start-date", "-s", help="Fecha de inicio (YYYY-MM-DD), default: mañana")
+@click.option("--twitter-slots", "-t", default="09:00,21:00", help="Slots de Twitter (HH:MM,HH:MM)")
+@click.option("--linkedin-slots", "-l", default="10:00,16:00", help="Slots de LinkedIn (HH:MM,HH:MM)")
+def balance_reschedule(start_date, twitter_slots, linkedin_slots):
+    """Reprogramar todos los posts para balancear 2 Twitter + 2 LinkedIn por día."""
+    from datetime import datetime, timedelta
+    
+    with Database() as db:
+        # Obtener todos los posts programados
+        all_scheduled = db.fetchall(
+            """
+            SELECT q.id, q.candidate_id, q.scheduled_at, c.tweet_type
+            FROM tweet_queue q
+            JOIN tweet_candidates c ON q.candidate_id = c.id
+            WHERE q.status = 'scheduled'
+            ORDER BY q.scheduled_at ASC
+            """
+        )
+        
+        if not all_scheduled:
+            console.print("[yellow]No hay posts programados para reprogramar[/yellow]")
+            return
+        
+        # Separar por plataforma
+        twitter_posts = [p for p in all_scheduled if not p['tweet_type'].startswith('linkedin_')]
+        linkedin_posts = [p for p in all_scheduled if p['tweet_type'].startswith('linkedin_')]
+        
+        console.print(f"\n[cyan]Posts encontrados:[/cyan]")
+        console.print(f"  🐦 Twitter: {len(twitter_posts)}")
+        console.print(f"  💼 LinkedIn: {len(linkedin_posts)}")
+        
+        # Parsear slots
+        twitter_slot_list = [tuple(map(int, slot.split(':'))) for slot in twitter_slots.split(',')]
+        linkedin_slot_list = [tuple(map(int, slot.split(':'))) for slot in linkedin_slots.split(',')]
+        
+        # Determinar fecha de inicio
+        if start_date:
+            current_date = datetime.strptime(start_date, "%Y-%m-%d")
+        else:
+            current_date = datetime.now() + timedelta(days=1)
+            current_date = current_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        console.print(f"\n[cyan]Reprogramando desde: {current_date.strftime('%d/%m/%Y')}[/cyan]")
+        console.print(f"[dim]Twitter slots: {twitter_slots}[/dim]")
+        console.print(f"[dim]LinkedIn slots: {linkedin_slots}[/dim]\n")
+        
+        updates = []
+        
+        # Programar en alternancia: 2 Twitter + 2 LinkedIn por día
+        twitter_idx = 0
+        linkedin_idx = 0
+        day_offset = 0
+        
+        while twitter_idx < len(twitter_posts) or linkedin_idx < len(linkedin_posts):
+            current_day = current_date + timedelta(days=day_offset)
+            
+            # Programar 2 Twitter posts en este día
+            for slot_idx, (hour, minute) in enumerate(twitter_slot_list):
+                if twitter_idx >= len(twitter_posts):
+                    break
+                
+                scheduled_at = current_day.replace(hour=hour, minute=minute)
+                post = twitter_posts[twitter_idx]
+                updates.append((scheduled_at.isoformat(), post['id']))
+                
+                post_type = post['tweet_type']
+                console.print(f"  🐦 {post_type.capitalize():12} → {scheduled_at.strftime('%d/%m %H:%M')}")
+                
+                twitter_idx += 1
+            
+            # Programar 2 LinkedIn posts en este día
+            for slot_idx, (hour, minute) in enumerate(linkedin_slot_list):
+                if linkedin_idx >= len(linkedin_posts):
+                    break
+                
+                scheduled_at = current_day.replace(hour=hour, minute=minute)
+                post = linkedin_posts[linkedin_idx]
+                updates.append((scheduled_at.isoformat(), post['id']))
+                
+                post_type = post['tweet_type'].replace('linkedin_', '')
+                console.print(f"  💼 {post_type.capitalize():12} → {scheduled_at.strftime('%d/%m %H:%M')}")
+                
+                linkedin_idx += 1
+            
+            day_offset += 1
+        
+        # Confirmar antes de aplicar
+        if not Confirm.ask(f"\n¿Reprogramar {len(updates)} posts?"):
+            console.print("[yellow]Cancelado[/yellow]")
+            return
+        
+        # Aplicar cambios
+        for scheduled_at, queue_id in updates:
+            db.execute(
+                "UPDATE tweet_queue SET scheduled_at = ?, updated_at = ? WHERE id = ?",
+                (scheduled_at, datetime.now().isoformat(), queue_id)
+            )
+        
+        console.print(f"\n[green]✓ {len(updates)} posts reprogramados exitosamente[/green]")
+        console.print("[dim]Ver programación: app list-scheduled[/dim]")
+
+
+@cli.command()
+@click.option("--host", default="127.0.0.1", help="Host del servidor web")
+@click.option("--port", default=8000, help="Puerto del servidor web")
+def web(host, port):
+    """Iniciar interfaz web."""
+    try:
+        import uvicorn
+        from src.web.main import app as web_app
+        
+        console.print("\n[bold cyan]🌐 AppTwitter Web UI[/bold cyan]")
+        console.print(f"[green]Servidor iniciando en http://{host}:{port}[/green]")
+        console.print("[dim]Presionar Ctrl+C para detener[/dim]\n")
+        
+        uvicorn.run(web_app, host=host, port=port, log_level="info")
+    
+    except ImportError:
+        console.print("[red]Error: FastAPI/Uvicorn no instalado[/red]")
+        console.print("[yellow]Instalar con: poetry install[/yellow]")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Servidor detenido[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Error iniciando servidor: {e}[/red]")
+        sys.exit(1)
 
 
 

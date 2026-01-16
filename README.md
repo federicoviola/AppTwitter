@@ -122,6 +122,37 @@ Then authenticate:
 
 ---
 
+## 🌐 Web UI (NEW!)
+
+AppTwitter now includes a modern web interface for easier management!
+
+### Starting the Web UI
+
+```bash
+./app.sh web
+```
+
+Then open your browser to: **http://localhost:8000**
+
+### Features
+
+- **📊 Dashboard** - Status overview and quick actions
+- **✨ Generate** - Visual interface for content creation
+- **✅ Review** - Card-based candidate approval
+- **📅 Scheduled** - Timeline view of upcoming posts
+- **📈 Stats** - Comprehensive analytics
+
+### Tech Stack
+
+- **Backend**: FastAPI (async, lightweight)
+- **Frontend**: Alpine.js + Vanilla CSS
+- **Theme**: Modern glassmorphic dark mode
+- **100% Local**: No cloud dependencies
+
+> **Note**: The CLI remains fully functional. The web UI is an additional interface, not a replacement.
+
+---
+
 ## 📖 Usage
 
 ### Complete Workflow

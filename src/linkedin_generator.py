@@ -5,7 +5,8 @@ import random
 from typing import Dict, List, Optional
 
 from .db import Database
-from .utils import hash_text, setup_logging
+from .llm_service import LLMClient
+from .utils import hash_text, setup_logging, fetch_article_content
 from .voice import VoiceProfile
 
 logger = setup_logging()
@@ -21,58 +22,11 @@ class LinkedInGenerator:
         """Inicializar generador."""
         self.db = db
         self.voice = voice
-        self.llm_client = None
-        self.llm_provider = None
         
-        # Intentar inicializar cliente LLM
-        self._init_llm_client()
-    
-    def _init_llm_client(self):
-        """Inicializar cliente de LLM si está disponible."""
-        import os
+        # Inicializar cliente LLM unificado
+        self.llm_service = LLMClient(voice)
+        self.llm_client = self.llm_service.client # Mantener compatibilidad
         
-        # Intentar Gemini (Google)
-        if os.getenv("GEMINI_API_KEY"):
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-                self.llm_client = genai.GenerativeModel('gemini-2.0-flash')
-                self.llm_provider = "gemini"
-                logger.info("Cliente Gemini (Google) inicializado para LinkedIn")
-                return
-            except ImportError:
-                logger.warning("google-generativeai no instalado")
-            except Exception as e:
-                logger.warning(f"Error inicializando Gemini: {e}")
-        
-        # Intentar OpenAI
-        if os.getenv("OPENAI_API_KEY"):
-            try:
-                from openai import OpenAI
-                self.llm_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-                self.llm_provider = "openai"
-                logger.info("Cliente OpenAI inicializado para LinkedIn")
-                return
-            except ImportError:
-                logger.warning("openai no instalado")
-            except Exception as e:
-                logger.warning(f"Error inicializando OpenAI: {e}")
-        
-        # Intentar Anthropic
-        if os.getenv("ANTHROPIC_API_KEY"):
-            try:
-                from anthropic import Anthropic
-                self.llm_client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-                self.llm_provider = "anthropic"
-                logger.info("Cliente Anthropic inicializado para LinkedIn")
-                return
-            except ImportError:
-                logger.warning("anthropic no instalado")
-            except Exception as e:
-                logger.warning(f"Error inicializando Anthropic: {e}")
-        
-        logger.info("No hay cliente LLM disponible para LinkedIn.")
-    
     def generate(self, post_type: str, article_id: Optional[int] = None, count: int = 1) -> List[Dict]:
         """Generar posts de LinkedIn."""
         if post_type not in self.POST_TYPES:
@@ -96,42 +50,13 @@ class LinkedInGenerator:
         prompt = self._build_prompt(post_type, article_id)
         
         try:
-            if self.llm_provider == "gemini":
-                generation_config = {
-                    "temperature": self.voice.get_temperatura(),
-                    "max_output_tokens": 1000,
-                }
-                
-                response = self.llm_client.generate_content(
-                    prompt,
-                    generation_config=generation_config
-                )
-                content = response.text.strip()
+            content = self.llm_service.generate(
+                prompt=prompt,
+                max_tokens=1000,
+                system_instruction="Eres un asistente que genera posts profesionales para LinkedIn en español."
+            )
             
-            elif self.llm_provider == "openai":
-                response = self.llm_client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "Eres un asistente que genera posts profesionales para LinkedIn en español."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=self.voice.get_temperatura(),
-                    max_tokens=1000
-                )
-                content = response.choices[0].message.content.strip()
-            
-            elif self.llm_provider == "anthropic":
-                response = self.llm_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=1000,
-                    temperature=self.voice.get_temperatura(),
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-                content = response.content[0].text.strip()
-            
-            else:
+            if not content:
                 return None
             
             # Limpiar contenido
@@ -145,11 +70,29 @@ class LinkedInGenerator:
             # Obtener artículo si hay
             article_url = None
             article_title = None
+            article_image_url = None
+            
             if article_id:
                 article = self.db.fetchone("SELECT * FROM articulos WHERE id = ?", (article_id,))
                 if article:
                     article_url = article.get("url")
                     article_title = article.get("titulo")
+                    
+                    # Si ya hemos obtenido el contenido en _build_prompt, idealmente deberíamos reusarlo.
+                    # Pero _build_prompt devuelve un string.
+                    # Para simplificar y evitar doble fetch, podríamos confiar en que fetch_article_content cachea/es rápido,
+                    # O (mejor) hacer el fetch aquí si no lo hicimos antes, PERO _build_prompt se llama antes.
+                    # MALA ARQUITECTURA: _build_prompt hace el fetch pero no devuelve la metadata.
+                    # FIX: Vamos a hacer un fetch rápido aquí para obtener la imagen, asumiendo que el contenido ya fue usado.
+                    # O mejor: mover la lógica de fetch AQUÍ y pasar el contenido a _build_prompt?
+                    # Por ahora, para no romper todo, hacemos fetch aquí de nuevo.
+                    if article_url:
+                        try:
+                           content_data = fetch_article_content(article_url)
+                           if content_data:
+                               article_image_url = content_data.get("image_url")
+                        except:
+                            pass
             
             # Crear post
             post = {
@@ -159,7 +102,8 @@ class LinkedInGenerator:
                 "article_id": article_id,
                 "article_url": article_url,
                 "article_title": article_title,
-                "metadata": json.dumps({"generator": "llm", "provider": self.llm_provider})
+                "article_image_url": article_image_url,
+                "metadata": json.dumps({"generator": "llm", "provider": self.llm_service.get_provider_name()})
             }
             
             return post
@@ -292,85 +236,93 @@ A veces dar un paso atrás es la forma más rápida de avanzar.
         hashtags_sugeridos = [f"#{t.replace(' ', '')}" for t in temas[:5]]
         
         prompt_parts = [
-            "Genera un post profesional para LinkedIn en español siguiendo este perfil de voz:",
+            "INSTRUCCIONES:",
+            "1. Analiza el perfil de voz. Genera post que suene humano y profesional.",
+            "2. Usa párrafos cortos y claros (estilo LinkedIn).",
+            "3. Aporta VALOR real, no solo relleno.",
             "",
+            "PERFIL DE VOZ:",
             self.voice.to_prompt(),
             "",
-            "IMPORTANTE sobre el formato de LinkedIn:",
-            "- Los posts de LinkedIn pueden ser más largos (hasta 3000 caracteres)",
-            "- Usa saltos de línea para mejorar la legibilidad",
-            "- Evita bloques de texto muy densos",
-            "- El tono debe ser profesional pero accesible",
-            "- Puedes usar emojis con moderación (1-3 máximo)",
-            "- Termina invitando a la interacción o reflexión",
-            "",
-            "HASHTAGS (OBLIGATORIO):",
-            "- SIEMPRE incluye entre 3 y 5 hashtags relevantes al final del post",
-            "- Los hashtags deben estar en una línea separada al final",
-            "- Usa hashtags en español o inglés según el contexto",
-            f"- Hashtags sugeridos basados en tu perfil: {', '.join(hashtags_sugeridos)}" if hashtags_sugeridos else "",
-            "- Ejemplos de formato: #InteligenciaArtificial #Filosofía #Tecnología",
+            "FORMATO LINKEDIN:",
+            "- Máximo 3000 caracteres.",
+            "- Usa saltos de línea frecuentes.",
+            "- Tono profesional pero cercano.",
+            "- Emojis: uso moderado (1-3 max).",
+            "- Termina con pregunta/call to action.",
+            "- SIEMPRE incluye hashtags al final.",
+            f"- Hashtags sugeridos: {', '.join(hashtags_sugeridos)}" if hashtags_sugeridos else "",
             "",
         ]
         
         if post_type == "promo" and article_id:
             article = self.db.fetchone("SELECT * FROM articulos WHERE id = ?", (article_id,))
             if article:
+                # Intentar obtener contenido completo
+                full_content = None
+                if article.get('url'):
+                    try:
+                        logger.info(f"Obteniendo contenido de: {article['url']}")
+                        content_data = fetch_article_content(article['url'])
+                        if content_data:
+                            full_content = content_data.get("text", "")
+                    except Exception as e:
+                        logger.warning(f"No se pudo obtener contenido: {e}")
+                
+                context_content = full_content if full_content else article['resumen']
+                if context_content and len(context_content) > 12000:
+                    context_content = context_content[:12000] + "..."
+
                 prompt_parts.extend([
-                    "Tipo de post: Promoción de artículo",
-                    f"Título del artículo: {article['titulo']}",
-                    f"Resumen: {article['resumen']}",
-                    f"Plataforma original: {article.get('plataforma', 'blog')}",
-                    f"Tags: {article.get('tags', '')}",
+                    "TAREA: Post promocionando artículo.",
+                    f"TÍTULO: {article['titulo']}",
+                    f"CONTENIDO: {context_content}",
+                    f"PLATAFORMA: {article.get('plataforma', 'blog')}",
                     "",
-                    "Genera un post que:",
-                    "- Presente el artículo de forma atractiva y profesional",
-                    "- Incluya un hook inicial que genere interés",
-                    "- Resuma las ideas principales",
-                    "- NO incluya el enlace en el texto (se agrega por separado)",
-                    "- Invite a leer el artículo completo",
-                    "- Termine con una pregunta o invitación a comentar",
-                    "- Use 500-1000 caracteres aproximadamente",
+                    "REGLAS:",
+                    "- NO pongas el enlace en el texto del post (di 'Link en comentarios').",
+                    "- Extrae una lección valiosa o insight del texto.",
+                    "- Genera curiosidad sin ser clickbait.",
                 ])
         
         elif post_type == "thought":
             prompt_parts.extend([
-                "Tipo de post: Reflexión o pensamiento",
+                "TAREA: Reflexión profunda sobre un tema.",
                 "",
-                "Genera un post que:",
-                "- Exprese una tesis o reflexión sobre algún tema de mi expertise",
-                "- Sea conceptualmente denso pero accesible",
-                "- Use formato de párrafos cortos o lista",
-                "- Invite a la reflexión o al debate",
-                "- Use 400-800 caracteres aproximadamente",
+                "REGLAS:",
+                "- Desarrolla una idea contraintuitiva o profunda.",
+                "- Cuestiona el status quo.",
+                "- Usa estructura: Gancho -> Desarrollo -> Conclusión/Pregunta.",
             ])
         
         elif post_type == "story":
             prompt_parts.extend([
-                "Tipo de post: Historia o anécdota profesional",
+                "TAREA: Historia o anécdota profesional (storytelling).",
                 "",
-                "Genera un post que:",
-                "- Cuente una historia breve o anécdota profesional",
-                "- Extraiga una lección o aprendizaje",
-                "- Sea personal pero profesional",
-                "- Conecte emocionalmente con el lector",
-                "- Termine con una pregunta o reflexión",
-                "- Use 500-1000 caracteres aproximadamente",
+                "REGLAS:",
+                "- Narra una experiencia (real o plausible basada en el perfil).",
+                "- Enfocate en el conflicto y la resolución.",
+                "- Extrae una lección universal.",
             ])
         
         elif post_type == "insight":
             prompt_parts.extend([
-                "Tipo de post: Insight o lista profesional",
+                "TAREA: Lista de insights (3-5 puntos).",
                 "",
-                "Genera un post que:",
-                "- Comparta insights o aprendizajes en formato de lista (3-5 puntos)",
-                "- Sea práctico y aplicable",
-                "- Use emojis para los puntos (números o iconos)",
-                "- Termine invitando a agregar más puntos",
-                "- Use 400-800 caracteres aproximadamente",
+                "REGLAS:",
+                "- Usa formato de lista con emojis (1️⃣, 2️⃣, etc).",
+                "- Cada punto debe ser accionable o revelador.",
+                "- Estructura: Afirmación -> Explicación breve.",
             ])
         
-        prompt_parts.append("\nGenera SOLO el texto del post, sin comillas ni explicaciones adicionales.")
+        prompt_parts.extend([
+            "",
+            "REQUISITO CRÍTICO:",
+            "- Genera DIRECTAMENTE el texto del post listo para publicar.",
+            "- NO incluyas introducciones como 'Aquí tienes', 'Aquí está', etc.",
+            "- NO uses formato de respuesta a un prompt.",
+            "- El texto debe empezar INMEDIATAMENTE con el contenido del post.",
+        ])
         
         return "\n".join(prompt_parts)
     
@@ -388,6 +340,8 @@ A veces dar un paso atrás es la forma más rápida de avanzar.
             metadata["article_url"] = post["article_url"]
         if post.get("article_title"):
             metadata["article_title"] = post["article_title"]
+        if post.get("article_image_url"):
+            metadata["article_image_url"] = post["article_image_url"]
         
         # Usamos la misma tabla pero con metadata diferente
         db_post = {

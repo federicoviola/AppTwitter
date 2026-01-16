@@ -6,7 +6,8 @@ from typing import Dict, List, Optional
 
 from .db import Database
 from .filters import TweetFilter
-from .utils import hash_text, setup_logging, truncate_text, validate_tweet_length
+from .llm_service import LLMClient
+from .utils import hash_text, setup_logging, truncate_text, validate_tweet_length, fetch_article_content
 from .voice import VoiceProfile
 
 logger = setup_logging()
@@ -22,56 +23,10 @@ class TweetGenerator:
         self.db = db
         self.voice = voice
         self.filter = tweet_filter
-        self.llm_client = None
         
-        # Intentar inicializar cliente LLM
-        self._init_llm_client()
-    
-    def _init_llm_client(self):
-        """Inicializar cliente de LLM si está disponible."""
-        import os
-        
-        # Intentar Gemini (Google)
-        if os.getenv("GEMINI_API_KEY"):
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-                self.llm_client = genai.GenerativeModel('gemini-2.0-flash')
-                self.llm_provider = "gemini"
-                logger.info("Cliente Gemini (Google) inicializado")
-                return
-            except ImportError:
-                logger.warning("google-generativeai no instalado. Instalar con: poetry install -E llm-gemini")
-            except Exception as e:
-                logger.warning(f"Error inicializando Gemini: {e}")
-        
-        # Intentar OpenAI
-        if os.getenv("OPENAI_API_KEY"):
-            try:
-                from openai import OpenAI
-                self.llm_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-                self.llm_provider = "openai"
-                logger.info("Cliente OpenAI inicializado")
-                return
-            except ImportError:
-                logger.warning("openai no instalado. Instalar con: poetry install -E llm-openai")
-            except Exception as e:
-                logger.warning(f"Error inicializando OpenAI: {e}")
-        
-        # Intentar Anthropic
-        if os.getenv("ANTHROPIC_API_KEY"):
-            try:
-                from anthropic import Anthropic
-                self.llm_client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-                self.llm_provider = "anthropic"
-                logger.info("Cliente Anthropic inicializado")
-                return
-            except ImportError:
-                logger.warning("anthropic no instalado. Instalar con: poetry install -E llm-anthropic")
-            except Exception as e:
-                logger.warning(f"Error inicializando Anthropic: {e}")
-        
-        logger.info("No hay cliente LLM disponible. Usando generación basada en plantillas.")
+        # Inicializar cliente LLM unificado
+        self.llm_service = LLMClient(voice)
+        self.llm_client = self.llm_service.client # Mantener compatibilidad de chequeo
     
     def generate(self, tweet_type: str, article_id: Optional[int] = None, count: int = 1) -> List[Dict]:
         """Generar tweets."""
@@ -96,43 +51,13 @@ class TweetGenerator:
         prompt = self._build_prompt(tweet_type, article_id)
         
         try:
-            if self.llm_provider == "gemini":
-                # Configurar generación con Gemini
-                generation_config = {
-                    "temperature": self.voice.get_temperatura(),
-                    "max_output_tokens": 300,
-                }
-                
-                response = self.llm_client.generate_content(
-                    prompt,
-                    generation_config=generation_config
-                )
-                content = response.text.strip()
+            content = self.llm_service.generate(
+                prompt=prompt,
+                max_tokens=300,
+                system_instruction="Eres un asistente que genera tweets en español siguiendo un perfil de voz específico."
+            )
             
-            elif self.llm_provider == "openai":
-                response = self.llm_client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "Eres un asistente que genera tweets en español siguiendo un perfil de voz específico."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=self.voice.get_temperatura(),
-                    max_tokens=300
-                )
-                content = response.choices[0].message.content.strip()
-            
-            elif self.llm_provider == "anthropic":
-                response = self.llm_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=300,
-                    temperature=self.voice.get_temperatura(),
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-                content = response.content[0].text.strip()
-            
-            else:
+            if not content:
                 return None
             
             # Limpiar contenido (remover comillas si las hay)
@@ -149,7 +74,7 @@ class TweetGenerator:
                 "content_hash": hash_text(content),
                 "tweet_type": tweet_type,
                 "article_id": article_id,
-                "metadata": json.dumps({"generator": "llm", "provider": self.llm_provider})
+                "metadata": json.dumps({"generator": "llm", "provider": self.llm_service.get_provider_name()})
             }
             
             # Validar con filtros
@@ -267,8 +192,12 @@ class TweetGenerator:
     def _build_prompt(self, tweet_type: str, article_id: Optional[int] = None) -> str:
         """Construir prompt para LLM."""
         prompt_parts = [
-            "Genera un tweet en español siguiendo este perfil de voz:",
+            "INSTRUCCIONES:",
+            "1. Analiza cuidadosamente el perfil de voz proporcionado.",
+            "2. Piensa en cómo el autor abordaría el tema (tono, vocabulario, estructura).",
+            "3. Genera un tweet que parezca escrito por este autor, no por una IA.",
             "",
+            "PERFIL DE VOZ:",
             self.voice.to_prompt(),
             "",
         ]
@@ -276,53 +205,76 @@ class TweetGenerator:
         if tweet_type == "promo" and article_id:
             article = self.db.fetchone("SELECT * FROM articulos WHERE id = ?", (article_id,))
             if article:
+                # Intentar obtener contenido completo
+                if article.get('url'):
+                    try:
+                        logger.info(f"Obteniendo contenido de: {article['url']}")
+                        content_data = fetch_article_content(article['url'])
+                        
+                        if content_data:
+                            # Usar contenido completo (truncado si es muy largo)
+                            full_text = content_data.get("text", "")
+                            if len(full_text) > 10000:
+                                full_text = full_text[:10000] + "..."
+                            
+                            prompt_parts.append(f"CONTENIDO DEL ARTÍCULO:\n{full_text}")
+                        else:
+                            # Fallback a resumen
+                            prompt_parts.append(f"RESUMEN DEL ARTÍCULO:\n{article['resumen']}")
+                    except Exception as e:
+                        logger.warning(f"No se pudo obtener contenido del artículo: {e}")
+                        prompt_parts.append(f"RESUMEN DEL ARTÍCULO:\n{article['resumen']}")
+                else:
+                    prompt_parts.append(f"RESUMEN DEL ARTÍCULO:\n{article['resumen']}")
+                
                 prompt_parts.extend([
-                    "Tipo de tweet: Promoción de artículo",
-                    f"Título: {article['titulo']}",
-                    f"Resumen: {article['resumen']}",
+                    "TAREA: Escribe un tweet promocionando este artículo.",
+                    f"TÍTULO: {article['titulo']}",
                     f"URL: {article['url']}",
                     "",
-                    "Genera un tweet que:",
-                    "- Presente el artículo de forma atractiva",
-                    "- Incluya un hook que genere interés",
-                    "- Incluya el enlace al final",
-                    "- No exceda 280 caracteres",
+                    "REGLAS:",
+                    "- Presente el artículo de forma atractiva pero intelectualmente honesta.",
+                    "- Extrae una idea provocadora o central del texto.",
+                    "- NO uses lenguaje de marketing ('descubre', 'imperdible', 'haz click').",
+                    "- Incluye el enlace al final.",
+                    "- No exceda 280 caracteres.",
                 ])
         
         elif tweet_type == "thought":
             prompt_parts.extend([
-                "Tipo de tweet: Pensamiento breve",
+                "TAREA: Escribe un tweet de pensamiento/reflexión.",
                 "",
-                "Genera un tweet que:",
-                "- Exprese una tesis o reflexión breve",
-                "- Sea conceptualmente denso pero claro",
-                "- No incluya enlaces",
-                "- No exceda 280 caracteres",
+                "REGLAS:",
+                "- Exprese una tesis o reflexión breve y potente.",
+                "- Sea conceptualmente denso pero claro.",
+                "- Evita lugares comunes.",
+                "- No incluyas enlaces.",
+                "- No exceda 280 caracteres.",
             ])
         
         elif tweet_type == "question":
             prompt_parts.extend([
-                "Tipo de tweet: Pregunta abierta",
+                "TAREA: Escribe un tweet que plantee una pregunta.",
                 "",
-                "Genera un tweet que:",
-                "- Plantee una pregunta filosófica o conceptual",
-                "- Invite a la reflexión",
-                "- No sea retórica ni obvia",
-                "- No exceda 280 caracteres",
+                "REGLAS:",
+                "- Plantea una pregunta filosófica o conceptual genuina.",
+                "- Invita a pensar, no solo a responder sí/no.",
+                "- No seas retórico ni obvio.",
+                "- No exceda 280 caracteres.",
             ])
         
         elif tweet_type == "thread":
             prompt_parts.extend([
-                "Tipo de tweet: Primer tweet de un hilo",
+                "TAREA: Escribe el PRIMER tweet de un hilo.",
                 "",
-                "Genera el primer tweet de un hilo que:",
-                "- Introduzca un tema complejo",
-                "- Indique que es un hilo (con 🧵 o '1/')",
-                "- Genere expectativa",
-                "- No exceda 280 caracteres",
+                "REGLAS:",
+                "- Introduce un tema complejo de forma interesante.",
+                "- Indica claramente que es un hilo (usa 🧵 o '1/').",
+                "- Genera curiosidad intelectual.",
+                "- No exceda 280 caracteres.",
             ])
         
-        prompt_parts.append("\nGenera SOLO el texto del tweet, sin comillas ni explicaciones adicionales.")
+        prompt_parts.append("\nGenera SOLO el texto del tweet, sin comillas, preámbulos ni explicaciones.")
         
         return "\n".join(prompt_parts)
     
@@ -364,3 +316,4 @@ class TweetGenerator:
                     logger.info(f"Tweet generado y guardado: {tweet_type} (ID: {tweet_id})")
         
         return tweet_ids
+

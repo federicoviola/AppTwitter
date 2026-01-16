@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AppTwitter - Web UI</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+
+<body x-data="app()" x-init="init()">
+
+    <!-- Header -->
+    <header>
+        <h1>🐦 AppTwitter</h1>
+        <p>AI-Powered Content Automation Dashboard</p>
+    </header>
+
+    <!-- Navigation -->
+    <nav>
+        <button class="nav-btn" :class="{ 'active': currentView === 'dashboard' }" @click="currentView = 'dashboard'">
+            📊 Dashboard
+        </button>
+        <button class="nav-btn" :class="{ 'active': currentView === 'generate' }" @click="currentView = 'generate'">
+            ✨ Generate
+        </button>
+        <button class="nav-btn" :class="{ 'active': currentView === 'review' }"
+            @click="currentView = 'review'; loadCandidates('all')">
+            ✅ Review
+        </button>
+        <button class="nav-btn" :class="{ 'active': currentView === 'scheduled' }"
+            @click="currentView = 'scheduled'; loadScheduled()">
+            📅 Scheduled
+        </button>
+        <button class="nav-btn" :class="{ 'active': currentView === 'stats' }"
+            @click="currentView = 'stats'; loadStats()">
+            📈 Stats
+        </button>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container">
+
+        <!-- Alert Messages -->
+        <div x-show="alert.show" x-transition class="alert" :class="'alert-' + alert.type">
+            <span x-text="alert.message"></span>
+        </div>
+
+        <!-- Dashboard Section -->
+        <div class="section" :class="{ 'active': currentView === 'dashboard' }">
+            <div class="status-grid">
+                <div class="status-card">
+                    <div class="icon">📄</div>
+                    <div class="value" x-text="status.articles">-</div>
+                    <div class="label">Articles</div>
+                </div>
+                <div class="status-card">
+                    <div class="icon">📝</div>
+                    <div class="value" x-text="status.candidates">-</div>
+                    <div class="label">Candidates</div>
+                </div>
+                <div class="status-card">
+                    <div class="icon">📅</div>
+                    <div class="value" x-text="status.scheduled">-</div>
+                    <div class="label">Scheduled</div>
+                </div>
+                <div class="status-card">
+                    <div class="icon">⏰</div>
+                    <div class="value" x-text="formatNextPublication()">-</div>
+                    <div class="label">Next Publication</div>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <h2 class="mb-3">Quick Actions</h2>
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <button class="btn btn-primary" @click="currentView = 'generate'">
+                        ✨ Generate Content
+                    </button>
+                    <button class="btn btn-secondary" @click="currentView = 'review'">
+                        ✅ Review Candidates
+                    </button>
+                    <button class="btn btn-secondary" @click="currentView = 'scheduled'">
+                        📅 View Schedule
+                    </button>
+                    <button class="btn btn-secondary" @click="loadStatus()">
+                        🔄 Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Generate Section -->
+        <div class="section" :class="{ 'active': currentView === 'generate' }">
+            <div class="card" style="max-width: 600px; margin: 0 auto;">
+                <h2 class="mb-3">Generate Content</h2>
+
+                <div class="form-group">
+                    <label>Platform</label>
+                    <select class="form-control" x-model="generateForm.platform">
+                        <option value="twitter">Twitter / X</option>
+                        <option value="linkedin">LinkedIn</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Promotional Posts</label>
+                    <input type="number" class="form-control" x-model.number="generateForm.promo" min="0" max="20">
+                </div>
+
+                <div class="form-group">
+                    <label>Thought Posts</label>
+                    <input type="number" class="form-control" x-model.number="generateForm.thought" min="0" max="20">
+                </div>
+
+                <div class="form-group" x-show="generateForm.platform === 'twitter'">
+                    <label>Question Posts</label>
+                    <input type="number" class="form-control" x-model.number="generateForm.question" min="0" max="20">
+                </div>
+
+                <div class="form-group" x-show="generateForm.platform === 'linkedin'">
+                    <label>Story Posts</label>
+                    <input type="number" class="form-control" x-model.number="generateForm.story" min="0" max="20">
+                </div>
+
+                <div class="form-group" x-show="generateForm.platform === 'linkedin'">
+                    <label>Insight Posts</label>
+                    <input type="number" class="form-control" x-model.number="generateForm.insight" min="0" max="20">
+                </div>
+
+                <button class="btn btn-primary" @click="generateContent()" :disabled="loading">
+                    <span x-show="!loading">✨ Generate</span>
+                    <span x-show="loading">Generating...</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Review Section -->
+        <div class="section" :class="{ 'active': currentView === 'review' }">
+            <div class="mb-3" style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>Review Candidates</h2>
+                <div>
+                    <button class="btn btn-secondary" @click="loadCandidates('twitter')">Twitter</button>
+                    <button class="btn btn-secondary" @click="loadCandidates('linkedin')">LinkedIn</button>
+                    <button class="btn btn-secondary" @click="loadCandidates('all')">All</button>
+                </div>
+            </div>
+
+            <div x-show="loading" class="spinner"></div>
+
+            <div x-show="!loading && candidates.length === 0" class="text-center text-muted mt-4">
+                No candidates to review. Generate some content first!
+            </div>
+
+            <div class="candidates-grid">
+                <template x-for="candidate in candidates" :key="candidate.id">
+                    <div class="candidate-card">
+                        <div class="candidate-header">
+                            <span class="candidate-type" x-text="candidate.tweet_type"></span>
+                            <span class="platform-badge" :class="candidate.metadata?.platform || 'twitter'"
+                                x-text="(candidate.metadata?.platform || 'twitter').toUpperCase()"></span>
+                        </div>
+
+                        <div class="candidate-content" x-text="candidate.content"></div>
+
+                        <div class="candidate-meta" x-show="candidate.article_title">
+                            📄 Article: <span x-text="candidate.article_title"></span>
+                        </div>
+
+                        <div class="candidate-actions">
+                            <button class="btn btn-success" @click="approveCandidate(candidate.id, true)">
+                                ✅ Approve
+                            </button>
+                            <button class="btn btn-danger" @click="approveCandidate(candidate.id, false)">
+                                ❌ Skip
+                            </button>
+                            <button class="btn btn-secondary" @click="editCandidate(candidate)">
+                                ✏️ Edit
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Scheduled Section -->
+        <div class="section" :class="{ 'active': currentView === 'scheduled' }">
+            <div class="mb-3" style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>Scheduled Posts</h2>
+                <button class="btn btn-secondary" @click="loadScheduled()">🔄 Refresh</button>
+            </div>
+
+            <div x-show="loading" class="spinner"></div>
+
+            <div x-show="!loading && scheduledPosts.length === 0" class="text-center text-muted mt-4">
+                No posts scheduled yet. Approve some candidates first!
+            </div>
+
+            <div class="timeline">
+                <template x-for="post in scheduledPosts" :key="post.queue_id">
+                    <div class="timeline-item">
+                        <div class="timeline-date" x-text="formatDateTime(post.scheduled_at)"></div>
+                        <div class="timeline-content">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                                <div>
+                                    <span class="platform-badge" :class="post.platform"
+                                        x-text="post.platform.toUpperCase()"></span>
+                                    <span class="candidate-type" x-text="post.tweet_type"></span>
+                                </div>
+                                <button class="btn btn-secondary btn-sm" @click="reschedulePost(post)"
+                                    style="font-size: 0.8rem; padding: 0.3rem 0.6rem;">
+                                    🕐 Reschedule
+                                </button>
+                            </div>
+                            <div style="margin-bottom: 0.75rem;" x-text="post.content"></div>
+                            <div class="text-muted" style="font-size: 0.85rem;" x-show="post.article_title">
+                                📄 <span x-text="post.article_title"></span>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Stats Section -->
+        <div class="section" :class="{ 'active': currentView === 'stats' }">
+            <h2 class="mb-3">Statistics</h2>
+
+            <div class="status-grid">
+                <div class="status-card">
+                    <div class="icon">📄</div>
+                    <div class="value" x-text="stats.total_articles || 0">0</div>
+                    <div class="label">Total Articles</div>
+                </div>
+                <div class="status-card">
+                    <div class="icon">📝</div>
+                    <div class="value" x-text="stats.total_candidates || 0">0</div>
+                    <div class="label">Total Candidates</div>
+                </div>
+                <div class="status-card">
+                    <div class="icon">✅</div>
+                    <div class="value" x-text="stats.total_published || 0">0</div>
+                    <div class="label">Total Published</div>
+                </div>
+                <div class="status-card">
+                    <div class="icon">📊</div>
+                    <div class="value" x-text="calculateApprovalRate()">0%</div>
+                    <div class="label">Approval Rate</div>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <h3 class="mb-2">Status Breakdown</h3>
+                <div style="display: grid; gap: 1rem;">
+                    <template x-for="(count, status) in stats.by_status" :key="status">
+                        <div
+                            style="display: flex; justify-content: space-between; padding: 0.75rem; background: var(--bg-card); border-radius: 8px;">
+                            <span style="text-transform: capitalize;" x-text="status"></span>
+                            <strong x-text="count"></strong>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        function app() {
+            return {
+                currentView: 'dashboard',
+                loading: false,
+                alert: {
+                    show: false,
+                    type: 'info',
+                    message: ''
+                },
+                status: {
+                    articles: 0,
+                    candidates: 0,
+                    scheduled: 0,
+                    next_publication: null
+                },
+                generateForm: {
+                    platform: 'twitter',
+                    promo: 3,
+                    thought: 2,
+                    question: 1,
+                    story: 0,
+                    insight: 0
+                },
+                candidates: [],
+                scheduledPosts: [],
+                stats: {},
+
+                async init() {
+                    await this.loadStatus();
+                },
+
+                async loadStatus() {
+                    try {
+                        const response = await fetch('/api/status');
+                        const data = await response.json();
+                        if (data.success) {
+                            this.status = data.data;
+                        }
+                    } catch (error) {
+                        console.error('Error loading status:', error);
+                    }
+                },
+
+                async generateContent() {
+                    this.loading = true;
+                    try {
+                        const mix = {};
+                        if (this.generateForm.promo > 0) mix.promo = this.generateForm.promo;
+                        if (this.generateForm.thought > 0) mix.thought = this.generateForm.thought;
+                        // Only include question for Twitter
+                        if (this.generateForm.platform === 'twitter' && this.generateForm.question > 0) {
+                            mix.question = this.generateForm.question;
+                        }
+                        if (this.generateForm.platform === 'linkedin' && this.generateForm.story > 0) {
+                            mix.story = this.generateForm.story;
+                        }
+                        if (this.generateForm.platform === 'linkedin' && this.generateForm.insight > 0) {
+                            mix.insight = this.generateForm.insight;
+                        }
+
+                        const response = await fetch('/api/generate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                platform: this.generateForm.platform,
+                                mix: mix
+                            })
+                        });
+
+                        const data = await response.json();
+                        if (data.success) {
+                            this.showAlert('success', data.message);
+                            await this.loadStatus();
+                            this.currentView = 'review';
+                            await this.loadCandidates(this.generateForm.platform);
+                        } else {
+                            this.showAlert('error', 'Error: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (error) {
+                        this.showAlert('error', 'Error generating content: ' + error.message);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async loadCandidates(platform = 'all') {
+                    this.loading = true;
+                    try {
+                        const response = await fetch(`/api/candidates/${platform}?status=drafted`);
+                        const data = await response.json();
+                        if (data.success) {
+                            this.candidates = data.data;
+                        }
+                    } catch (error) {
+                        console.error('Error loading candidates:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async approveCandidate(candidateId, approve) {
+                    try {
+                        const response = await fetch(`/api/candidates/${candidateId}/approve`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ approve })
+                        });
+
+                        const data = await response.json();
+                        if (data.success) {
+                            this.showAlert('success', data.message);
+                            // Remove from list
+                            this.candidates = this.candidates.filter(c => c.id !== candidateId);
+                            await this.loadStatus();
+                        }
+                    } catch (error) {
+                        this.showAlert('error', 'Error: ' + error.message);
+                    }
+                },
+
+                editCandidate(candidate) {
+                    const newContent = prompt('Edit content:', candidate.content);
+                    if (newContent && newContent !== candidate.content) {
+                        this.updateCandidate(candidate.id, newContent);
+                    }
+                },
+
+                async updateCandidate(candidateId, content) {
+                    try {
+                        const response = await fetch(`/api/candidates/${candidateId}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ content })
+                        });
+
+                        const data = await response.json();
+                        if (data.success) {
+                            this.showAlert('success', data.message);
+                            // Update local data
+                            const candidate = this.candidates.find(c => c.id === candidateId);
+                            if (candidate) candidate.content = content;
+                        }
+                    } catch (error) {
+                        this.showAlert('error', 'Error: ' + error.message);
+                    }
+                },
+
+                async loadScheduled() {
+                    this.loading = true;
+                    try {
+                        const response = await fetch('/api/scheduled');
+                        const data = await response.json();
+                        if (data.success) {
+                            this.scheduledPosts = data.data;
+                        }
+                    } catch (error) {
+                        console.error('Error loading scheduled posts:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async loadStats() {
+                    try {
+                        const response = await fetch('/api/stats');
+                        const data = await response.json();
+                        if (data.success) {
+                            this.stats = data.data;
+                        }
+                    } catch (error) {
+                        console.error('Error loading stats:', error);
+                    }
+                },
+
+                async reschedulePost(post) {
+                    // Format current datetime for input (YYYY-MM-DDTHH:MM)
+                    const currentDate = new Date(post.scheduled_at);
+                    const currentDatetimeStr = currentDate.toISOString().slice(0, 16);
+
+                    // Prompt user for new datetime
+                    const newDatetimeStr = prompt(
+                        `Reschedule post (format: YYYY-MM-DD HH:MM)\nCurrent: ${this.formatDateTime(post.scheduled_at)}`,
+                        currentDatetimeStr.replace('T', ' ')
+                    );
+
+                    if (!newDatetimeStr || newDatetimeStr.trim() === '') {
+                        return; // User cancelled
+                    }
+
+                    try {
+                        // Parse input and convert to ISO format
+                        let isoDatetime;
+                        if (newDatetimeStr.includes('T')) {
+                            // Already in ISO format
+                            isoDatetime = new Date(newDatetimeStr).toISOString();
+                        } else {
+                            // Format: YYYY-MM-DD HH:MM
+                            const [datePart, timePart] = newDatetimeStr.trim().split(' ');
+                            isoDatetime = new Date(`${datePart}T${timePart}:00`).toISOString();
+                        }
+
+                        const response = await fetch(`/api/scheduled/${post.queue_id}/reschedule`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ scheduled_at: isoDatetime })
+                        });
+
+                        const data = await response.json();
+                        if (data.success) {
+                            this.showAlert('success', data.message);
+                            await this.loadScheduled(); // Reload to show updated time
+                        } else {
+                            this.showAlert('error', 'Error: ' + (data.error || 'Failed to reschedule'));
+                        }
+                    } catch (error) {
+                        this.showAlert('error', 'Error rescheduling: ' + error.message);
+                    }
+                },
+
+                showAlert(type, message) {
+                    this.alert = { show: true, type, message };
+                    setTimeout(() => {
+                        this.alert.show = false;
+                    }, 5000);
+                },
+
+                formatDateTime(datetime) {
+                    if (!datetime) return '-';
+                    const date = new Date(datetime);
+                    return date.toLocaleString('es-AR', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                },
+
+                formatNextPublication() {
+                    if (!this.status.next_publication) return 'None';
+                    const date = new Date(this.status.next_publication);
+                    const now = new Date();
+                    const tomorrow = new Date(now);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+
+                    if (date.toDateString() === now.toDateString()) {
+                        return 'Today ' + date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+                    } else if (date.toDateString() === tomorrow.toDateString()) {
+                        return 'Tomorrow ' + date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+                    } else {
+                        return this.formatDateTime(this.status.next_publication);
+                    }
+                },
+
+                calculateApprovalRate() {
+                    if (!this.stats.total_candidates || this.stats.total_candidates === 0) return '0%';
+                    const approved = (this.stats.by_status?.approved || 0) + (this.stats.by_status?.scheduled || 0) + (this.stats.total_published || 0);
+                    const rate = (approved / this.stats.total_candidates * 100).toFixed(1);
+                    return rate + '%';
+                }
+            }
+        }
+    </script>
+
+</body>
+
+</html>

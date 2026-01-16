@@ -86,52 +86,118 @@ class TweetScheduler:
         return False
     
     def schedule_approved_tweets(self) -> int:
-        """Planificar tweets aprobados usando slots fijos (mañana y noche)."""
-        # Obtener tweets aprobados sin planificar
+        """Planificar tweets aprobados usando slots específicos por plataforma."""
+        # Obtener todos los posts aprobados pendientes con su tipo
         approved = self.db.fetchall(
             """
-            SELECT id, candidate_id 
-            FROM tweet_queue 
-            WHERE status = 'approved' AND scheduled_at IS NULL
-            ORDER BY created_at ASC
+            SELECT q.id, q.candidate_id, c.tweet_type
+            FROM tweet_queue q
+            JOIN tweet_candidates c ON q.candidate_id = c.id
+            WHERE q.status = 'approved' AND q.scheduled_at IS NULL
+            ORDER BY q.created_at ASC
             """
         )
         
         if not approved:
-            logger.info("No hay tweets aprobados para planificar")
+            logger.info("No hay posts aprobados para planificar")
             return 0
         
         scheduled_count = 0
         current_time = datetime.now()
         
-        # Obtener próximo slot disponible
-        next_slot = self._get_next_available_slot(current_time)
+        # Separar posts de Twitter y LinkedIn
+        twitter_posts = [p for p in approved if not p["tweet_type"].startswith("linkedin_")]
+        linkedin_posts = [p for p in approved if p["tweet_type"].startswith("linkedin_")]
         
-        for tweet in approved:
-            # Verificar límite diario
-            if not self._can_schedule_on_day(next_slot):
-                # Mover al siguiente día, primer slot
-                next_slot = self._get_next_day_slot(next_slot)
+        # Programar posts de Twitter con slots de .env
+        if twitter_posts:
+            next_slot = self._get_next_available_slot(current_time)
+            for post in twitter_posts:
+                if not self._can_schedule_on_day(next_slot):
+                    next_slot = self._get_next_day_slot(next_slot)
+                
+                self.db.update(
+                    "tweet_queue",
+                    {
+                        "scheduled_at": next_slot.isoformat(),
+                        "status": "scheduled",
+                        "updated_at": datetime.now().isoformat()
+                    },
+                    "id = ?",
+                    (post["id"],)
+                )
+                
+                logger.info(f"Twitter post planificado: {post['id']} para {next_slot}")
+                scheduled_count += 1
+                next_slot = self._get_next_slot_after(next_slot)
+        
+        # Programar posts de LinkedIn con configuración separada
+        if linkedin_posts:
+            # LinkedIn usa configuración diferente: inicio 10:00, cada 6 horas
+            import os
+            linkedin_start_hour = int(os.getenv("LINKEDIN_START_HOUR", "10"))
+            linkedin_interval_hours = int(os.getenv("LINKEDIN_INTERVAL_HOURS", "6"))
             
-            # Actualizar tweet con horario
-            self.db.update(
-                "tweet_queue",
-                {
-                    "scheduled_at": next_slot.isoformat(),
-                    "status": "scheduled",
-                    "updated_at": datetime.now().isoformat()
-                },
-                "id = ?",
-                (tweet["id"],)
-            )
+            # Encontrar el próximo slot disponible de LinkedIn
+            linkedin_slot = self._get_next_available_linkedin_slot(current_time, linkedin_start_hour, linkedin_interval_hours)
             
-            logger.info(f"Tweet planificado: {tweet['id']} para {next_slot}")
-            scheduled_count += 1
-            
-            # Avanzar al siguiente slot
-            next_slot = self._get_next_slot_after(next_slot)
+            for post in linkedin_posts:
+                self.db.update(
+                    "tweet_queue",
+                    {
+                        "scheduled_at": linkedin_slot.isoformat(),
+                        "status": "scheduled",
+                        "updated_at": datetime.now().isoformat()
+                    },
+                    "id = ?",
+                    (post["id"],)
+                )
+                
+                logger.info(f"LinkedIn post planificado: {post['id']} para {linkedin_slot}")
+                scheduled_count += 1
+                
+                # Buscar siguiente slot disponible
+                linkedin_slot = self._get_next_available_linkedin_slot(
+                    linkedin_slot + timedelta(hours=linkedin_interval_hours),
+                    linkedin_start_hour,
+                    linkedin_interval_hours
+                )
         
         return scheduled_count
+    
+    def _get_next_available_linkedin_slot(self, from_time: datetime, start_hour: int, interval_hours: int) -> datetime:
+        """Obtener próximo slot disponible para LinkedIn (máximo 2 por día)."""
+        current_date = from_time.date()
+        
+        for _ in range(60):  # Buscar hasta 60 días adelante
+            # Generar slots del día (máximo 2: start_hour y start_hour + interval)
+            daily_slots = [
+                datetime(current_date.year, current_date.month, current_date.day, start_hour, 0, 0),
+                datetime(current_date.year, current_date.month, current_date.day, start_hour + interval_hours, 0, 0)
+            ]
+            
+            for slot_time in daily_slots:
+                # El slot debe ser en el futuro
+                if slot_time > from_time:
+                    # Verificar que no hay otro post ya programado en este slot
+                    existing = self.db.fetchone(
+                        """
+                        SELECT COUNT(*) as count 
+                        FROM tweet_queue 
+                        WHERE scheduled_at = ? 
+                        AND status IN ('scheduled', 'posted')
+                        """,
+                        (slot_time.isoformat(),)
+                    )
+                    
+                    if not existing or existing["count"] == 0:
+                        return slot_time
+            
+            # Pasar al siguiente día
+            current_date = current_date + timedelta(days=1)
+        
+        # Fallback: primer slot de la fecha actual + 60 días
+        return datetime(current_date.year, current_date.month, current_date.day, start_hour, 0, 0)
     
     def _get_next_slot_after(self, dt: datetime) -> datetime:
         """Obtener el siguiente slot después de una fecha dada."""

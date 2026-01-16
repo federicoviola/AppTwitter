@@ -6,8 +6,10 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Dict
 
+import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 # Cargar variables de entorno
@@ -142,3 +144,49 @@ def count_chars(text: str) -> int:
 def validate_tweet_length(text: str, max_length: int = 280) -> bool:
     """Validar que un tweet no exceda la longitud máxima."""
     return count_chars(text) <= max_length
+
+
+def fetch_article_content(url: str) -> Optional[Dict[str, str]]:
+    """Obtener contenido y metadata de una URL."""
+    try:
+        # Headers para simular navegador
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Eliminar elementos no deseados para el texto
+        for script in soup(["script", "style", "nav", "footer", "header", "iframe"]):
+            script.decompose()
+            
+        # Obtener texto
+        text = soup.get_text()
+        
+        # Limpiar espacios
+        lines = (line.strip() for line in text.splitlines())
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        text = '\n'.join(chunk for chunk in chunks if chunk)
+        
+        # Obtener título y metadata
+        title = soup.title.string if soup.title else ""
+        
+        # Obtener imagen (og:image)
+        image_url = ""
+        og_image = soup.find("meta", property="og:image")
+        if og_image and og_image.get("content"):
+            image_url = og_image["content"]
+        
+        return {
+            "text": text,
+            "title": title,
+            "image_url": image_url
+        }
+            
+    except Exception as e:
+        # Logging solo advertencia para no ensuciar logs si falla una URL
+        logging.getLogger("apptwitter").warning(f"Error obteniendo contenido de {url}: {e}")
+        return None

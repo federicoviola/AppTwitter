@@ -305,7 +305,8 @@ class LinkedInClient:
     
     def post(self, text: str, article_url: Optional[str] = None, 
              article_title: Optional[str] = None, 
-             article_description: Optional[str] = None) -> Optional[Dict]:
+             article_description: Optional[str] = None,
+             image_url: Optional[str] = None) -> Optional[Dict]:
         """
         Publicar en LinkedIn.
         
@@ -314,6 +315,7 @@ class LinkedInClient:
             article_url: URL del artículo a compartir (opcional)
             article_title: Título del artículo (opcional)
             article_description: Descripción del artículo (opcional)
+            image_url: URL de la imagen del artículo (opcional)
         
         Returns:
             Dict con resultado o None si falló
@@ -332,6 +334,27 @@ class LinkedInClient:
             # Construir payload
             if article_url:
                 # Post con artículo
+                media_object = {
+                    "status": "READY",
+                    "originalUrl": article_url
+                }
+                
+                # Agregar thumbnail si hay imagen
+                if image_url:
+                    media_object["thumbnails"] = [{
+                        "url": image_url
+                    }]
+                
+                # Agregar título y descripción si están disponibles
+                if article_title:
+                    media_object["title"] = {
+                        "text": article_title
+                    }
+                if article_description:
+                    media_object["description"] = {
+                        "text": article_description[:200]
+                    }
+
                 payload = {
                     "author": f"urn:li:person:{self.user_id}",
                     "lifecycleState": "PUBLISHED",
@@ -341,26 +364,13 @@ class LinkedInClient:
                                 "text": text
                             },
                             "shareMediaCategory": "ARTICLE",
-                            "media": [{
-                                "status": "READY",
-                                "originalUrl": article_url
-                            }]
+                            "media": [media_object]
                         }
                     },
                     "visibility": {
                         "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
                     }
                 }
-                
-                # Agregar título y descripción si están disponibles
-                if article_title:
-                    payload["specificContent"]["com.linkedin.ugc.ShareContent"]["media"][0]["title"] = {
-                        "text": article_title
-                    }
-                if article_description:
-                    payload["specificContent"]["com.linkedin.ugc.ShareContent"]["media"][0]["description"] = {
-                        "text": article_description[:200]  # Límite de descripción
-                    }
             else:
                 # Post de solo texto
                 payload = {
