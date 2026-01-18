@@ -50,6 +50,7 @@
 - **Spacing Control**: Minimum time between posts
 - **Daily Limits**: Respect platform guidelines (LinkedIn/X)
 - **Unified Daemon Mode**: Run one process to publish on both platforms
+- **Real-Time Notifications**: Get notified via **ntfy.sh** (mobile) and **Desktop** (Linux) on every post
 
 ### 🔒 Privacy-First
 - **100% Local**: All data stored on your machine
@@ -137,10 +138,10 @@ Then open your browser to: **http://localhost:8000**
 ### Features
 
 - **📊 Dashboard** - Status overview and quick actions
-- **✨ Generate** - Visual interface for content creation
-- **✅ Review** - Card-based candidate approval
-- **📅 Scheduled** - Timeline view of upcoming posts
-- **📈 Stats** - Comprehensive analytics
+- **✨ Generate** - Visual interface for content creation (Twitter & LinkedIn)
+- **✅ Review** - Card-based candidate approval with editing
+- **📅 Scheduled** - Timeline view with individual rescheduling
+- **📈 Stats** - Comprehensive analytics and activity tracking
 
 ### Tech Stack
 
@@ -197,6 +198,7 @@ Then open your browser to: **http://localhost:8000**
 | `list-scheduled` | Show ALL scheduled posts (X + LinkedIn) |
 | `run` | Unified publisher (publishes both platforms) |
 | `stats` | Show statistics (global) |
+| `balance-reschedule` | Redistribute ALL scheduled posts (2 X + 2 LinkedIn per day) |
 | `edit-voice` | Edit voice profile |
 | `linkedin-auth` | Authenticate with LinkedIn (OAuth) |
 | `linkedin-status` | Check LinkedIn connection status |
@@ -225,6 +227,8 @@ AppTwitter/
 │   ├── generator.py    # Tweet generation (LLM/templates)
 │   ├── filters.py      # Safety filters
 │   ├── scheduler.py    # Queue and scheduling
+│   ├── llm_service.py  # Unified LLM client (Gemini/OpenAI/Anthropic)
+│   ├── notifier.py     # Multi-channel notifications (ntfy/Desktop)
 │   ├── x_client.py     # X API client (Tweepy)
 │   └── utils.py        # Utilities
 ├── data/
@@ -280,6 +284,16 @@ MIN_SPACING_MINUTES=120  # Minimum time between tweets
 # Time Window (24h format)
 POST_WINDOW_START=09:00
 POST_WINDOW_END=22:00
+
+# LinkedIn Specifics
+LINKEDIN_START_HOUR=10
+LINKEDIN_INTERVAL_HOURS=6
+LINKEDIN_POSTS_PER_DAY=2
+
+# Notifications
+NOTIFICATIONS_ENABLED=true
+DESKTOP_NOTIFICATIONS_ENABLED=true
+NTFY_TOPIC=your_unique_topic
 ```
 
 ### Voice Profile (`voz.yaml`)
