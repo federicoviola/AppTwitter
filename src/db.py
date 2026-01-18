@@ -117,6 +117,15 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_queue_scheduled 
             ON tweet_queue(scheduled_at)
         """)
+
+        # Índice único para evitar duplicados en el mismo slot
+        # Solo para posts que están programados o publicados
+        # Esto previene problemas si dos procesos intentan programar al mismo tiempo
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_slot
+            ON tweet_queue(scheduled_at)
+            WHERE status IN ('scheduled', 'posted')
+        """)
         
         self.conn.commit()
     

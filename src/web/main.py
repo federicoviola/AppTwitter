@@ -228,8 +228,14 @@ async def list_candidates(platform: str, status: str = "drafted"):
         
         candidates = db.fetchall(query, (status,))
         
-        # Parse metadata JSON
+        # Parse metadata JSON and determine platform
         for candidate in candidates:
+            # Determine platform from tweet_type
+            if candidate.get("tweet_type", "").startswith("linkedin_"):
+                candidate["platform"] = "linkedin"
+            else:
+                candidate["platform"] = "twitter"
+
             if candidate.get("metadata"):
                 try:
                     candidate["metadata"] = json.loads(candidate["metadata"])

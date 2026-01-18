@@ -111,25 +111,35 @@ class TweetScheduler:
         
         # Programar posts de Twitter con slots de .env
         if twitter_posts:
-            next_slot = self._get_next_available_slot(current_time)
             for post in twitter_posts:
-                if not self._can_schedule_on_day(next_slot):
+                # Buscar el próximo disponible CADA vEZ dentro del bucle
+                # para evitar colisiones si se programan varios
+                next_slot = self._get_next_available_slot(current_time)
+                
+                # Doble verificación de límite diario
+                while not self._can_schedule_on_day(next_slot):
                     next_slot = self._get_next_day_slot(next_slot)
-                
-                self.db.update(
-                    "tweet_queue",
-                    {
-                        "scheduled_at": next_slot.isoformat(),
-                        "status": "scheduled",
-                        "updated_at": datetime.now().isoformat()
-                    },
-                    "id = ?",
-                    (post["id"],)
-                )
-                
-                logger.info(f"Twitter post planificado: {post['id']} para {next_slot}")
-                scheduled_count += 1
-                next_slot = self._get_next_slot_after(next_slot)
+                    # Después de saltar de día, buscar el primer slot disponible de ese día
+                    next_slot = self._get_next_available_slot(next_slot - timedelta(minutes=1))
+
+                try:
+                    self.db.update(
+                        "tweet_queue",
+                        {
+                            "scheduled_at": next_slot.isoformat(),
+                            "status": "scheduled",
+                            "updated_at": datetime.now().isoformat()
+                        },
+                        "id = ? AND status = 'approved'",
+                        (post["id"],)
+                    )
+                    
+                    logger.info(f"Twitter post planificado: {post['id']} para {next_slot}")
+                    scheduled_count += 1
+                except Exception as e:
+                    # Si falla por índice único u otro, loguear y seguir con el siguiente
+                    logger.error(f"Error programando post {post['id']}: {e}")
+                    continue
         
         # Programar posts de LinkedIn con configuración separada
         if linkedin_posts:
