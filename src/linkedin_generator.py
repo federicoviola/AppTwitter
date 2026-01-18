@@ -15,7 +15,7 @@ logger = setup_logging()
 class LinkedInGenerator:
     """Generador de posts para LinkedIn."""
     
-    POST_TYPES = ["promo", "thought", "story", "insight"]
+    POST_TYPES = ["promo", "thought", "question", "insight"]
     MAX_LENGTH = 3000  # LinkedIn permite hasta 3000 caracteres
     
     def __init__(self, db: Database, voice: VoiceProfile):
@@ -120,8 +120,8 @@ class LinkedInGenerator:
             content = self._generate_thought_template()
             article_url = None
             article_title = None
-        elif post_type == "story":
-            content = self._generate_story_template()
+        elif post_type == "question":
+            content = self._generate_question_template()
             article_url = None
             article_title = None
         elif post_type == "insight":
@@ -197,20 +197,19 @@ Es llegar al núcleo de las cosas.
 
 #Reflexiones #Pensamiento #Filosofía"""
     
-    def _generate_story_template(self) -> str:
-        """Generar post tipo historia."""
-        return """Hace un tiempo me pasó algo que me hizo repensar cómo trabajo.
+    def _generate_question_template(self) -> str:
+        """Generar post con pregunta filosófica/profesional."""
+        temas = self.voice.temas
+        tema = random.choice(temas) if temas else "nuestro tiempo"
+        return f"""¿Qué significa realmente pensar la {tema} en un mundo saturado de respuestas rápidas?
+        
+A menudo confundimos la información con el conocimiento, y el conocimiento con la sabiduría.
 
-Estaba en medio de un proyecto importante y me di cuenta de que había estado optimizando lo incorrecto.
+¿Estamos perdiendo la capacidad de sostener una pregunta sin buscar el alivio de una solución inmediata?
 
-Me enfocaba en la eficiencia.
-Debería haberme enfocado en la dirección.
+Me encantaría leer tus reflexiones en los comentarios.
 
-A veces dar un paso atrás es la forma más rápida de avanzar.
-
-¿Te pasó algo similar alguna vez?
-
-#Productividad #Aprendizaje #Reflexiones"""
+#Filosofía #PensamientoCrítico #{tema.replace(' ', '')}"""
     
     def _generate_insight_template(self) -> str:
         """Generar post tipo insight profesional."""
@@ -295,14 +294,15 @@ A veces dar un paso atrás es la forma más rápida de avanzar.
                 "- Usa estructura: Gancho -> Desarrollo -> Conclusión/Pregunta.",
             ])
         
-        elif post_type == "story":
+        elif post_type == "question":
             prompt_parts.extend([
-                "TAREA: Historia o anécdota profesional (storytelling).",
+                "TAREA: Plantea una pregunta filosófica o conceptual profunda.",
                 "",
                 "REGLAS:",
-                "- Narra una experiencia (real o plausible basada en el perfil).",
-                "- Enfocate en el conflicto y la resolución.",
-                "- Extrae una lección universal.",
+                "- Evita las anécdotas personales superficiales.",
+                "- Enfócate en la base conceptual de un tema de actualidad o profesional.",
+                "- Invita a una reflexión pausada, no a una respuesta impulsiva.",
+                "- Estructura: Provocación/Contexto -> La Pregunta -> Invitación al diálogo.",
             ])
         
         elif post_type == "insight":

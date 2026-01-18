@@ -121,8 +121,8 @@
                 </div>
 
                 <div class="form-group" x-show="generateForm.platform === 'linkedin'">
-                    <label>Story Posts</label>
-                    <input type="number" class="form-control" x-model.number="generateForm.story" min="0" max="20">
+                    <label>Question Posts</label>
+                    <input type="number" class="form-control" x-model.number="generateForm.question" min="0" max="20">
                 </div>
 
                 <div class="form-group" x-show="generateForm.platform === 'linkedin'">
@@ -159,8 +159,8 @@
                     <div class="candidate-card">
                         <div class="candidate-header">
                             <span class="candidate-type" x-text="candidate.tweet_type"></span>
-                            <span class="platform-badge" :class="candidate.metadata?.platform || 'twitter'"
-                                x-text="(candidate.metadata?.platform || 'twitter').toUpperCase()"></span>
+                            <span class="platform-badge" :class="candidate.platform"
+                                x-text="candidate.platform.toUpperCase()"></span>
                         </div>
 
                         <div class="candidate-content" x-text="candidate.content"></div>
