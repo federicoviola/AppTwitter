@@ -445,8 +445,17 @@
 
                 async reschedulePost(post) {
                     // Format current datetime for input (YYYY-MM-DDTHH:MM)
+                    // If it has a Z or offset, we want to show it in local time
                     const currentDate = new Date(post.scheduled_at);
-                    const currentDatetimeStr = currentDate.toISOString().slice(0, 16);
+
+                    // Helper to get local ISO string (YYYY-MM-DDTHH:MM)
+                    const toLocalISO = (date) => {
+                        const tzOffset = date.getTimezoneOffset() * 60000;
+                        const localISOTime = (new Date(date - tzOffset)).toISOString().slice(0, 16);
+                        return localISOTime;
+                    };
+
+                    const currentDatetimeStr = toLocalISO(currentDate);
 
                     // Prompt user for new datetime
                     const newDatetimeStr = prompt(
@@ -459,21 +468,25 @@
                     }
 
                     try {
-                        // Parse input and convert to ISO format
-                        let isoDatetime;
+                        let finalISO;
                         if (newDatetimeStr.includes('T')) {
-                            // Already in ISO format
-                            isoDatetime = new Date(newDatetimeStr).toISOString();
+                            finalISO = newDatetimeStr;
                         } else {
-                            // Format: YYYY-MM-DD HH:MM
                             const [datePart, timePart] = newDatetimeStr.trim().split(' ');
-                            isoDatetime = new Date(`${datePart}T${timePart}:00`).toISOString();
+                            finalISO = `${datePart}T${timePart}:00`;
+                        }
+
+                        // Ensure it's a valid date but keep it as a naive string for the server
+                        const testDate = new Date(finalISO.includes('T') ? finalISO : finalISO.replace(' ', 'T'));
+                        if (isNaN(testDate.getTime())) {
+                            alert('Invalid date format. Use YYYY-MM-DD HH:MM');
+                            return;
                         }
 
                         const response = await fetch(`/api/scheduled/${post.queue_id}/reschedule`, {
                             method: 'PATCH',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ scheduled_at: isoDatetime })
+                            body: JSON.stringify({ scheduled_at: finalISO })
                         });
 
                         const data = await response.json();

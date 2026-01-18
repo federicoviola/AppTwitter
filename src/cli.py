@@ -436,11 +436,13 @@ def run(daemon, interval, twitter_only, linkedin_only):
     import json
     from datetime import datetime
     from .linkedin_client import LinkedInClient
+    from .notifier import Notifier
     
     with Database() as db:
         scheduler = TweetScheduler(db)
         x_client = XClient()
         linkedin_client = LinkedInClient()
+        notifier = Notifier()
         
         # Verificar qué plataformas están disponibles
         x_available = x_client.is_available()
@@ -534,6 +536,14 @@ def run(daemon, interval, twitter_only, linkedin_only):
                     )
                     console.print(f"[green]✓ Publicado en Twitter" + 
                                  (" (con imagen)" if has_image else "") + "[/green]")
+                    
+                    # Notificar
+                    notifier.notify(
+                        "Twitter/X", 
+                        f"Post publicado exitosamente:\n{tweet['content'][:100]}...",
+                        platform="twitter"
+                    )
+                    
                     published += 1
                 else:
                     error = result.get("error", "Error desconocido") if result else "Sin respuesta"
@@ -606,6 +616,14 @@ def run(daemon, interval, twitter_only, linkedin_only):
                         response=result.get("response")
                     )
                     console.print(f"[green]✓ Publicado en LinkedIn[/green]")
+                    
+                    # Notificar
+                    notifier.notify(
+                        "LinkedIn", 
+                        f"Post ({post_type}) publicado exitosamente:\n{post['content'][:100]}...",
+                        platform="linkedin"
+                    )
+                    
                     published += 1
                 else:
                     error = result.get("error", "Error desconocido") if result else "Sin respuesta"
