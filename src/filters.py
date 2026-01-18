@@ -6,7 +6,7 @@ from typing import List, Optional
 from rapidfuzz import fuzz
 
 from .db import Database
-from .utils import hash_text, normalize_text, setup_logging
+from .utils import hash_text, normalize_text, setup_logging, count_chars
 from .voice import VoiceProfile
 
 logger = setup_logging()
@@ -129,8 +129,10 @@ class TweetFilter:
             return False, "Contiene contenido potencialmente engañoso"
         
         # Verificar longitud
-        if len(text) > 280:
-            return False, f"Excede longitud máxima (280 caracteres): {len(text)}"
+        # Verificar longitud usando lógica de Twitter (URLs = 23 chars)
+        actual_length = count_chars(text)
+        if actual_length > 280:
+            return False, f"Excede longitud máxima (280 caracteres): {actual_length}"
         
         if len(text) < 10:
             return False, "Demasiado corto (mínimo 10 caracteres)"

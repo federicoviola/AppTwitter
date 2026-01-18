@@ -64,8 +64,9 @@ class TweetGenerator:
             content = content.strip('"').strip("'")
             
             # Validar longitud
+            actual_length = count_chars(content)
             if not validate_tweet_length(content):
-                logger.warning(f"Tweet generado excede longitud: {len(content)} caracteres")
+                logger.warning(f"Tweet generado excede longitud real: {actual_length} caracteres")
                 content = truncate_text(content, 280)
             
             # Crear tweet
@@ -237,7 +238,7 @@ class TweetGenerator:
                     "- Extrae una idea provocadora o central del texto.",
                     "- NO uses lenguaje de marketing ('descubre', 'imperdible', 'haz click').",
                     "- Incluye el enlace al final.",
-                    "- No exceda 280 caracteres.",
+                    "- Importante: El enlace cuenta como 23 caracteres. El total NO debe exceder los 280 caracteres.",
                 ])
         
         elif tweet_type == "thought":

@@ -30,7 +30,7 @@
 - **Multiple LLM Support**: Gemini (recommended), OpenAI, or Anthropic
 - **Voice Profile**: Define your tone, themes, and argumentative patterns
 - **Smart Templates**: Fallback system when LLM is unavailable
-- **Content Types**: Promotional posts, thought pieces, questions, insights, and stories
+- **Content Types**: Promotional posts, thought pieces, questions, insights, and philosophical deep-dives
 
 ### 📥 Article Import
 - Import from **CSV** or **JSON** files
@@ -163,8 +163,8 @@ Then open your browser to: **http://localhost:8000**
 ./app.sh import-articles --file articles.csv
 
 # 2. Generate content for LinkedIn & Twitter
-./app.sh generate --mix "promo:5,thought:3"
-./app.sh linkedin-generate --mix "promo:5,story:2"
+./app.sh generate --mix "promo:5,thought:3,question:2"
+./app.sh linkedin-generate --mix "promo:5,question:2,insight:2"
 
 # 3. Review and approve
 ./app.sh review            # Review Twitter candidates
@@ -208,10 +208,11 @@ Then open your browser to: **http://localhost:8000**
 
 ### Tweet Types
 
-- **promo**: Article promotion with link
+- **promo**: Article promotion with smart link counting (URLs = 23 chars)
 - **thought**: Brief thought or insight (no link)
-- **question**: Open-ended question for engagement
-- **thread**: First tweet of a thread
+- **question**: Engagement-focused question (Twitter) or deep-dive conceptual query (LinkedIn)
+- **insight**: Professional lists or learnings (LinkedIn specific)
+- **thread**: Initial tweet for a thread (Twitter specific)
 
 ---
 

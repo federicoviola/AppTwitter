@@ -115,12 +115,7 @@
                     <input type="number" class="form-control" x-model.number="generateForm.thought" min="0" max="20">
                 </div>
 
-                <div class="form-group" x-show="generateForm.platform === 'twitter'">
-                    <label>Question Posts</label>
-                    <input type="number" class="form-control" x-model.number="generateForm.question" min="0" max="20">
-                </div>
-
-                <div class="form-group" x-show="generateForm.platform === 'linkedin'">
+                <div class="form-group">
                     <label>Question Posts</label>
                     <input type="number" class="form-control" x-model.number="generateForm.question" min="0" max="20">
                 </div>
@@ -289,7 +284,6 @@
                     promo: 3,
                     thought: 2,
                     question: 1,
-                    story: 0,
                     insight: 0
                 },
                 candidates: [],
@@ -318,13 +312,7 @@
                         const mix = {};
                         if (this.generateForm.promo > 0) mix.promo = this.generateForm.promo;
                         if (this.generateForm.thought > 0) mix.thought = this.generateForm.thought;
-                        // Only include question for Twitter
-                        if (this.generateForm.platform === 'twitter' && this.generateForm.question > 0) {
-                            mix.question = this.generateForm.question;
-                        }
-                        if (this.generateForm.platform === 'linkedin' && this.generateForm.story > 0) {
-                            mix.story = this.generateForm.story;
-                        }
+                        if (this.generateForm.question > 0) mix.question = this.generateForm.question;
                         if (this.generateForm.platform === 'linkedin' && this.generateForm.insight > 0) {
                             mix.insight = this.generateForm.insight;
                         }
